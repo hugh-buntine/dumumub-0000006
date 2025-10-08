@@ -10,7 +10,9 @@ CTestTestfile.cmake
 _deps
 **/.DS_Store
 
-# It's nice to have the Builds folder exist, to remind us where it is
+# Build directories (contains large binary files)
+build/
+Build/
 Builds/*
 !Builds/.gitkeep
 
