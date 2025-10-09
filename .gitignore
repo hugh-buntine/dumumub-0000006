@@ -10,6 +10,10 @@ CTestTestfile.cmake
 _deps
 **/.DS_Store
 
+# Log files
+logs/
+*.log
+
 # Build directories (contains large binary files)
 build/
 Build/

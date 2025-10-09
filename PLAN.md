@@ -54,7 +54,7 @@ MIDI-triggered grains spawn on 2D canvas and orbit around movable center mass. P
 - Grains orbit until lifespan kills them
 - User can move center mass in real-time
 - Tangential velocity creates stable orbits
-- Particles can bounce off canvas edges or wrap around
+- Particles can bounce off canvas edges or wrap around (modifiable)
 - Multiple spawn points with independent momentum arrows
 
 ---

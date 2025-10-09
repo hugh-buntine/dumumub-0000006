@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "BinaryData.h"
 #include "melatonin_inspector/melatonin_inspector.h"
+#include "Canvas.h"
 
 //==============================================================================
 class PluginEditor : public juce::AudioProcessorEditor
@@ -21,5 +22,8 @@ private:
     PluginProcessor& processorRef;
     std::unique_ptr<melatonin::Inspector> inspector;
     juce::TextButton inspectButton { "Inspect the UI" };
+
+    Canvas canvas;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

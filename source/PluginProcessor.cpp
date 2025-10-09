@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Logger.h"
 
 //==============================================================================
 PluginProcessor::PluginProcessor()
@@ -12,10 +13,15 @@ PluginProcessor::PluginProcessor()
                      #endif
                        )
 {
+    // Initialize the logger
+    Logger::getInstance().initialize("dumumub-0000006.log", "dumumub-0000006 Plugin Logger");
+    LOG_INFO("PluginProcessor constructed");
 }
 
 PluginProcessor::~PluginProcessor()
 {
+    LOG_INFO("PluginProcessor destroyed");
+    Logger::getInstance().shutdown();
 }
 
 //==============================================================================
@@ -89,6 +95,9 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
     juce::ignoreUnused (sampleRate, samplesPerBlock);
+    
+    LOG_INFO("prepareToPlay called - Sample Rate: " + juce::String(sampleRate) + 
+             " Hz, Buffer Size: " + juce::String(samplesPerBlock) + " samples");
 }
 
 void PluginProcessor::releaseResources()
@@ -159,6 +168,7 @@ bool PluginProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
 {
+    LOG_INFO("Creating plugin editor");
     return new PluginEditor (*this);
 }
 
