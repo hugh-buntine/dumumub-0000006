@@ -10,6 +10,9 @@ SpawnPoint::SpawnPoint()
     // Enable mouse events
     setMouseCursor (juce::MouseCursor::DraggingHandCursor);
     
+    // Initialize with a default momentum vector pointing right at minimum length
+    momentumVector = juce::Point<float> (20.0f, 0.0f);
+    
     LOG_INFO("SpawnPoint created");
 }
 
@@ -22,17 +25,10 @@ SpawnPoint::~SpawnPoint()
 //==============================================================================
 void SpawnPoint::paint (juce::Graphics& g)
 {
-    // Fill background with off white
-    g.fillAll (juce::Colour (255, 255, 242));
+    // Draw green circle
+    g.setColour (juce::Colour (0, 255, 0));
+    g.fillEllipse (getLocalBounds().toFloat());
     
-    // Draw black outline
-    g.setColour (juce::Colours::black);
-    g.drawRect (getLocalBounds(), 1);
-    
-    // Draw component name in center
-    g.setColour (juce::Colours::white);
-    g.setFont (15.0f);
-    g.drawFittedText ("SpawnPoint", getLocalBounds(), juce::Justification::centred, 1);
 }
 
 void SpawnPoint::resized()
@@ -43,7 +39,7 @@ void SpawnPoint::resized()
 //==============================================================================
 void SpawnPoint::mouseDown (const juce::MouseEvent& event)
 {
-    // Start dragging
+    // Start dragging the spawn point
     dragger.startDraggingComponent (this, event);
     LOG_INFO("Started dragging SpawnPoint from position (" + 
              juce::String(getX()) + ", " + juce::String(getY()) + ")");
@@ -60,6 +56,10 @@ void SpawnPoint::mouseDrag (const juce::MouseEvent& event)
     
     // Perform the drag
     dragger.dragComponent (this, event, &constrainer);
+    
+    // Notify parent that spawn point moved (so arrow can be redrawn)
+    if (onSpawnPointMoved)
+        onSpawnPointMoved();
 }
 
 void SpawnPoint::mouseUp (const juce::MouseEvent& event)

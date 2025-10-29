@@ -24,6 +24,12 @@ private:
     juce::TextButton inspectButton { "Inspect the UI" };
 
     Canvas canvas;
+    
+    juce::TextButton addSpawnPointButton { "Add Spawn" };
+    juce::TextButton addMassPointButton { "Add Mass" };
+    juce::TextButton emitParticleButton { "Emit Particle" };
+    
+    juce::Label audioFileLabel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

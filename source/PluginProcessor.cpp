@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Logger.h"
+#include <juce_audio_formats/juce_audio_formats.h>
 
 //==============================================================================
 PluginProcessor::PluginProcessor()
@@ -186,6 +187,57 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
     juce::ignoreUnused (data, sizeInBytes);
+}
+
+//==============================================================================
+// Audio File Loading
+
+void PluginProcessor::loadAudioFile (const juce::File& file)
+{
+    if (!file.existsAsFile())
+    {
+        LOG_WARNING("Attempted to load non-existent file: " + file.getFullPathName());
+        return;
+    }
+    
+    LOG_INFO("Loading audio file: " + file.getFullPathName());
+    
+    // Create audio format manager and register common formats
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+    
+    // Create reader for the file
+    std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
+    
+    if (reader != nullptr)
+    {
+        // Store file info
+        loadedAudioFile = file;
+        audioFileSampleRate = reader->sampleRate;
+        
+        // Read audio data into buffer
+        audioFileBuffer.setSize (static_cast<int>(reader->numChannels),
+                                 static_cast<int>(reader->lengthInSamples));
+        
+        reader->read (&audioFileBuffer,
+                      0,
+                      static_cast<int>(reader->lengthInSamples),
+                      0,
+                      true,
+                      true);
+        
+        LOG_INFO("Audio file loaded successfully - Channels: " + juce::String(reader->numChannels) +
+                 ", Sample Rate: " + juce::String(reader->sampleRate) + " Hz, " +
+                 "Length: " + juce::String(reader->lengthInSamples) + " samples (" +
+                 juce::String(reader->lengthInSamples / reader->sampleRate, 2) + " seconds)");
+    }
+    else
+    {
+        LOG_WARNING("Failed to create audio reader for file: " + file.getFullPathName());
+        loadedAudioFile = juce::File();
+        audioFileBuffer.setSize (0, 0);
+        audioFileSampleRate = 0.0;
+    }
 }
 
 //==============================================================================

@@ -37,7 +37,18 @@ public:
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    
+    // Audio file loading
+    void loadAudioFile (const juce::File& file);
+    juce::File getLoadedAudioFile() const { return loadedAudioFile; }
+    bool hasAudioFileLoaded() const { return loadedAudioFile.existsAsFile(); }
+    const juce::AudioBuffer<float>* getAudioBuffer() const { return &audioFileBuffer; }
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
+    
+    // Audio file storage
+    juce::File loadedAudioFile;
+    juce::AudioBuffer<float> audioFileBuffer;
+    double audioFileSampleRate = 0.0;
 };
