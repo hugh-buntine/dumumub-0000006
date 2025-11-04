@@ -91,6 +91,15 @@ private:
     float maxLifeTime = 30.0f; // 30 seconds before particle dies
     float radius = 3.0f;
     
+    // Trail system
+    struct TrailPoint {
+        juce::Point<float> position;
+        float age = 0.0f; // Age of this trail point in seconds
+    };
+    std::vector<TrailPoint> trail;
+    static constexpr int maxTrailPoints = 60; // ~1 second at 60 FPS
+    static constexpr float trailFadeTime = 1.0f; // Trail fades over 1 second
+    
     // Canvas bounds for position mapping
     juce::Rectangle<float> canvasBounds;
     

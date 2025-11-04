@@ -40,10 +40,7 @@ MIDI-triggered grains spawn on 2D canvas and orbit around movable center mass. P
 
 - **Note On** → Spawn grain at spawn point, Y-position based on MIDI note
 - **Note Off** → Grain continues until lifespan ends (or option to fade immediately)
-- **MIDI Velocity** → Controls initial grain speed (how fast it orbits)
-  - Low velocity = slow orbit
-  - High velocity = fast orbit
-  - Scaled by "Velocity Scale" parameter
+- **MIDI Velocity** → initial volume
 - **Pitch** → Static, doesn't change while orbiting
 
 ---

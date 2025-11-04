@@ -44,6 +44,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     audioFileLabel.setText ("No audio file loaded", juce::dontSendNotification);
     audioFileLabel.setColour (juce::Label::textColourId, juce::Colours::black);
     
+    // Setup particle count label
+    addAndMakeVisible (particleCountLabel);
+    particleCountLabel.setFont (juce::FontOptions (14.0f));
+    particleCountLabel.setJustificationType (juce::Justification::centredLeft);
+    particleCountLabel.setText ("Particles: 0", juce::dontSendNotification);
+    particleCountLabel.setColour (juce::Label::textColourId, juce::Colours::black);
+    
+    // Start timer to update particle count (10 Hz)
+    startTimer (100);
+    
     // Setup add spawn point button
     addAndMakeVisible (addSpawnPointButton);
     addSpawnPointButton.onClick = [this]() { canvas.newSpawnPoint(); };
@@ -133,6 +143,21 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
 PluginEditor::~PluginEditor()
 {
+    stopTimer();
+}
+
+void PluginEditor::timerCallback()
+{
+    // Update particle count display
+    auto& lock = canvas.getParticlesLock();
+    const juce::ScopedLock scopedLock (lock);
+    auto* particles = canvas.getParticles();
+    
+    if (particles != nullptr)
+    {
+        int count = particles->size();
+        particleCountLabel.setText ("Particles: " + juce::String(count), juce::dontSendNotification);
+    }
 }
 
 void PluginEditor::paint (juce::Graphics& g)
@@ -147,7 +172,10 @@ void PluginEditor::resized()
     inspectButton.setBounds (getWidth() - 50, getHeight() - 50, 50, 50);
     
     // Audio file label at top
-    audioFileLabel.setBounds (50, 10, 400, 30);
+    audioFileLabel.setBounds (50, 10, 300, 30);
+    
+    // Particle count label at top right
+    particleCountLabel.setBounds (360, 10, 90, 30);
     
     // Canvas in center
     canvas.setBounds (50, 50, 400, 400);

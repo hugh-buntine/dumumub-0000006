@@ -6,7 +6,8 @@
 #include "Canvas.h"
 
 //==============================================================================
-class PluginEditor : public juce::AudioProcessorEditor
+class PluginEditor : public juce::AudioProcessorEditor,
+                     private juce::Timer
 {
 public:
     explicit PluginEditor (PluginProcessor&);
@@ -15,6 +16,7 @@ public:
     //==============================================================================
     void paint (juce::Graphics&) override;
     void resized() override;
+    void timerCallback() override;
 
 private:
     // This reference is provided as a quick way for your editor to
@@ -30,6 +32,7 @@ private:
     juce::TextButton emitParticleButton { "Emit Particle" };
     
     juce::Label audioFileLabel;
+    juce::Label particleCountLabel;
     
     // Parameter controls
     juce::Slider grainSizeSlider;

@@ -53,6 +53,30 @@ Particle::~Particle()
 //==============================================================================
 void Particle::update (float deltaTime)
 {
+    // Add current position to trail
+    if (trail.empty() || position.getDistanceFrom(trail.back().position) > 2.0f)
+    {
+        TrailPoint newPoint;
+        newPoint.position = position;
+        newPoint.age = 0.0f;
+        trail.push_back (newPoint);
+        
+        // Limit trail length
+        if (trail.size() > maxTrailPoints)
+            trail.erase (trail.begin());
+    }
+    
+    // Age all trail points
+    for (auto& point : trail)
+        point.age += deltaTime;
+    
+    // Remove trail points that are too old
+    trail.erase (
+        std::remove_if (trail.begin(), trail.end(),
+                       [](const TrailPoint& p) { return p.age > trailFadeTime; }),
+        trail.end()
+    );
+    
     // Update velocity based on acceleration
     velocity += acceleration * deltaTime;
     
@@ -88,15 +112,46 @@ void Particle::wrapAround (const juce::Rectangle<float>& bounds)
 
 void Particle::draw (juce::Graphics& g)
 {
-    // Fade color based on lifetime (newer = brighter)
-    float alpha = juce::jmax (0.0f, 1.0f - (lifeTime / maxLifeTime));
+    // Calculate base alpha from lifetime (particle fades as it dies)
+    float lifetimeAlpha = juce::jmax (0.0f, 1.0f - (lifeTime / maxLifeTime));
     
     // Color changes based on active grains
-    juce::Colour particleColor = activeGrains.empty()
-        ? juce::Colours::blue.withAlpha (alpha) // Blue when silent
-        : juce::Colours::red.withAlpha (alpha);  // Red while playing
+    juce::Colour baseColor = activeGrains.empty()
+        ? juce::Colours::blue   // Blue when silent
+        : juce::Colours::red;   // Red while playing
     
-    g.setColour (particleColor);
+    // Draw trail (from oldest to newest)
+    if (trail.size() > 1)
+    {
+        for (size_t i = 0; i < trail.size() - 1; ++i)
+        {
+            const auto& p1 = trail[i];
+            const auto& p2 = trail[i + 1];
+            
+            // Skip drawing if distance is too large (particle teleported)
+            float dx = p2.position.x - p1.position.x;
+            float dy = p2.position.y - p1.position.y;
+            float distanceSquared = dx * dx + dy * dy;
+            
+            // If distance > 100 pixels, it's a teleport - skip drawing this segment
+            if (distanceSquared > 100.0f * 100.0f)
+                continue;
+            
+            // Calculate alpha: base transparency from particle lifetime, 
+            // then fade as trail point ages
+            float trailFade = 1.0f - (p1.age / trailFadeTime);
+            float alpha = lifetimeAlpha * trailFade * 0.6f; // 0.6 makes trail dimmer than particle
+            
+            // Draw line segment
+            g.setColour (baseColor.withAlpha (alpha));
+            g.drawLine (p1.position.x, p1.position.y, 
+                       p2.position.x, p2.position.y, 
+                       2.0f); // Line thickness
+        }
+    }
+    
+    // Draw the particle itself
+    g.setColour (baseColor.withAlpha (lifetimeAlpha));
     g.fillEllipse (position.x - radius, position.y - radius, radius * 2, radius * 2);
 }
 

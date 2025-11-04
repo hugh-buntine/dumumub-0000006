@@ -377,6 +377,15 @@ void Canvas::spawnParticle()
     // Lock particles for thread safety
     const juce::ScopedLock lock (particlesLock);
     
+    // Check if we need to remove the oldest particle (max 32 particles)
+    const int maxParticles = 32;
+    if (particles.size() >= maxParticles)
+    {
+        // Remove the oldest particle (index 0)
+        particles.remove (0);
+        LOG_INFO("Removed oldest particle to make room (max: " + juce::String(maxParticles) + ")");
+    }
+    
     // Get the spawn point using round-robin
     auto* spawn = spawnPoints[nextSpawnPointIndex];
     nextSpawnPointIndex = (nextSpawnPointIndex + 1) % spawnPoints.size();
