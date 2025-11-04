@@ -9,6 +9,9 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
       samplesSinceLastGrainTrigger (0),
       cachedTotalGrainSamples (2205), cachedAttackSamples (220), cachedReleaseSamples (220)
 {
+    // Reserve space for grains to avoid allocations during audio processing
+    // With 100Hz grain frequency, we might have ~20 overlapping grains at most
+    activeGrains.reserve (32);
 }
 
 void Particle::triggerNewGrain (int bufferLength)
@@ -16,8 +19,9 @@ void Particle::triggerNewGrain (int bufferLength)
     int startSample = calculateGrainStartPosition (bufferLength);
     activeGrains.push_back (Grain (startSample));
     
-    LOG_INFO("Grain triggered at sample " + juce::String(startSample) + 
-             ", total active grains: " + juce::String(activeGrains.size()));
+    // Logging disabled in audio thread to prevent dropouts
+    // LOG_INFO("Grain triggered at sample " + juce::String(startSample) + 
+    //          ", total active grains: " + juce::String(activeGrains.size()));
 }
 
 void Particle::updateGrains (int numSamples)
@@ -113,8 +117,9 @@ void Particle::updateSampleRate (double sampleRate)
         cachedAttackSamples = static_cast<int>((attackPercent / 100.0f) * halfGrainSamples);
         cachedReleaseSamples = static_cast<int>((releasePercent / 100.0f) * halfGrainSamples);
         
-        LOG_INFO("Particle sample rate updated: " + juce::String(sampleRate) + " Hz, " +
-                 "grain samples: " + juce::String(cachedTotalGrainSamples));
+        // Logging disabled in audio thread to prevent dropouts
+        // LOG_INFO("Particle sample rate updated: " + juce::String(sampleRate) + " Hz, " +
+        //          "grain samples: " + juce::String(cachedTotalGrainSamples));
     }
 }
 
