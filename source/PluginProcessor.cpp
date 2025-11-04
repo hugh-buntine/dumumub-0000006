@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Logger.h"
+#include "Canvas.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 //==============================================================================
@@ -12,7 +13,8 @@ PluginProcessor::PluginProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
+       apvts (*this, nullptr, "Parameters", createParameterLayout())
 {
     // Initialize the logger
     Logger::getInstance().initialize("dumumub-0000006.log", "dumumub-0000006 Plugin Logger");
@@ -23,6 +25,80 @@ PluginProcessor::~PluginProcessor()
 {
     LOG_INFO("PluginProcessor destroyed");
     Logger::getInstance().shutdown();
+}
+
+//==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    
+    // Grain Size (5ms - 500ms)
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "grainSize",
+        "Grain Size",
+        juce::NormalisableRange<float> (5.0f, 500.0f, 1.0f, 0.5f),
+        50.0f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { return juce::String (value, 1) + " ms"; }
+    ));
+    
+    // Grain Frequency (1 - 100 Hz)
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "grainFreq",
+        "Grain Frequency",
+        juce::NormalisableRange<float> (1.0f, 100.0f, 0.1f, 0.4f),
+        30.0f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { return juce::String (value, 1) + " Hz"; }
+    ));
+    
+    // Attack Time (0% - 100%)
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "attack",
+        "Attack",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+        20.0f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { return juce::String (value, 1) + " %"; }
+    ));
+    
+    // Release Time (0% - 100%)
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "release",
+        "Release",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+        20.0f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { return juce::String (value, 1) + " %"; }
+    ));
+    
+    // Lifespan (5s - 120s)
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "lifespan",
+        "Lifespan",
+        juce::NormalisableRange<float> (5.0f, 120.0f, 1.0f, 0.5f),
+        30.0f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { return juce::String (value, 1) + " s"; }
+    ));
+    
+    // Master Gain (-60dB - 0dB)
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "masterGain",
+        "Master Gain",
+        juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f),
+        -6.0f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { return juce::String (value, 1) + " dB"; }
+    ));
+    
+    return layout;
 }
 
 //==============================================================================
@@ -138,26 +214,119 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+    // Clear all output channels
+    for (auto i = 0; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    // Check if we have audio file loaded and canvas available
+    if (!hasAudioFileLoaded() || canvas == nullptr || audioFileBuffer.getNumSamples() == 0)
+        return;
+    
+    // Get parameter values
+    float grainSizeMs = apvts.getRawParameterValue("grainSize")->load();
+    float grainFreq = apvts.getRawParameterValue("grainFreq")->load();
+    float attackMs = apvts.getRawParameterValue("attack")->load();
+    float releaseMs = apvts.getRawParameterValue("release")->load();
+    float masterGainDb = apvts.getRawParameterValue("masterGain")->load();
+    float masterGainLinear = juce::Decibels::decibelsToGain(masterGainDb);
+    
+    // Get particles from canvas (thread-safe)
+    auto& particlesLock = canvas->getParticlesLock();
+    const juce::ScopedLock lock (particlesLock);
+    auto* particles = canvas->getParticles();
+    
+    if (particles == nullptr || particles->isEmpty())
+        return;
+    
+    // Process each particle's grains
+    for (auto* particle : *particles)
     {
-        auto* channelData = buffer.getWritePointer (channel);
-        juce::ignoreUnused (channelData);
-        // ..do something to the data...
+        // Update sample rate if needed (cached internally)
+        particle->updateSampleRate (getSampleRate());
+        
+        // Update grain parameters
+        particle->setGrainParameters (grainSizeMs, attackMs, releaseMs);
+        
+        // Check if we should trigger a new grain based on frequency
+        if (particle->shouldTriggerNewGrain (getSampleRate(), grainFreq))
+        {
+            particle->triggerNewGrain (audioFileBuffer.getNumSamples());
+        }
+        
+        // Update all grains (advance playback, remove finished)
+        particle->updateGrains (buffer.getNumSamples());
+        
+        // Get all active grains for this particle
+        auto& grains = particle->getActiveGrains();
+        
+        // Process each active grain
+        for (auto& grain : grains)
+        {
+            int grainStartSample = grain.startSample;
+            int grainPosition = grain.playbackPosition;
+            int totalGrainSamples = particle->getTotalGrainSamples();
+            
+            // Calculate how many samples to render this block
+            int samplesToRender = juce::jmin (buffer.getNumSamples(), 
+                                              totalGrainSamples - grainPosition);
+            
+            if (samplesToRender <= 0)
+                continue;
+            
+            // Get edge crossfade info for smooth wraparound panning
+            auto crossfade = particle->getEdgeCrossfade();
+            float amplitude = particle->getGrainAmplitude (grain); // 0.0 to 1.0 (includes envelope)
+            
+            // Apply lifetime fade (quieter as particle dies)
+            amplitude *= particle->getLifetimeAmplitude();
+            
+            // Apply master gain
+            amplitude *= masterGainLinear;
+            
+            // Calculate stereo gains from main pan
+            float panAngle = (crossfade.mainPan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
+            float leftGain = std::cos (panAngle) * amplitude;
+            float rightGain = std::sin (panAngle) * amplitude;
+            
+            // If crossfading near edge, blend with opposite side
+            float crossLeftGain = 0.0f;
+            float crossRightGain = 0.0f;
+            if (crossfade.crossfadeAmount > 0.0f)
+            {
+                float crossPanAngle = (crossfade.crossfadePan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
+                crossLeftGain = std::cos (crossPanAngle) * amplitude * crossfade.crossfadeAmount;
+                crossRightGain = std::sin (crossPanAngle) * amplitude * crossfade.crossfadeAmount;
+                
+                // Reduce main gains to maintain constant power
+                float mainAmount = 1.0f - crossfade.crossfadeAmount;
+                leftGain *= mainAmount;
+                rightGain *= mainAmount;
+            }
+            
+            // Render grain samples
+            for (int i = 0; i < samplesToRender; ++i)
+            {
+                int sourceSample = grainStartSample + grainPosition + i;
+                
+                // Bounds check and wrap if needed
+                if (sourceSample >= audioFileBuffer.getNumSamples())
+                    sourceSample = sourceSample % audioFileBuffer.getNumSamples();
+                
+                // Get audio sample (mono or averaged if stereo source)
+                float audioSample = 0.0f;
+                for (int channel = 0; channel < audioFileBuffer.getNumChannels(); ++channel)
+                {
+                    audioSample += audioFileBuffer.getSample (channel, sourceSample);
+                }
+                audioSample /= audioFileBuffer.getNumChannels();
+                
+                // Write to output with panning (main + crossfade)
+                if (totalNumOutputChannels >= 1)
+                    buffer.addSample (0, i, audioSample * (leftGain + crossLeftGain));
+                if (totalNumOutputChannels >= 2)
+                    buffer.addSample (1, i, audioSample * (rightGain + crossRightGain));
+            }
+        }
     }
 }
 

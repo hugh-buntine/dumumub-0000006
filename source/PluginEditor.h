@@ -30,6 +30,28 @@ private:
     juce::TextButton emitParticleButton { "Emit Particle" };
     
     juce::Label audioFileLabel;
+    
+    // Parameter controls
+    juce::Slider grainSizeSlider;
+    juce::Label grainSizeLabel;
+    juce::Slider grainFreqSlider;
+    juce::Label grainFreqLabel;
+    juce::Slider attackSlider;
+    juce::Label attackLabel;
+    juce::Slider releaseSlider;
+    juce::Label releaseLabel;
+    juce::Slider lifespanSlider;
+    juce::Label lifespanLabel;
+    juce::Slider masterGainSlider;
+    juce::Label masterGainLabel;
+    
+    // Attachments
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> grainSizeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> grainFreqAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> releaseAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lifespanAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterGainAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

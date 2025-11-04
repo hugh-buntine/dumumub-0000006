@@ -374,6 +374,9 @@ void Canvas::spawnParticle()
         return;
     }
     
+    // Lock particles for thread safety
+    const juce::ScopedLock lock (particlesLock);
+    
     // Get the spawn point using round-robin
     auto* spawn = spawnPoints[nextSpawnPointIndex];
     nextSpawnPointIndex = (nextSpawnPointIndex + 1) % spawnPoints.size();
@@ -382,8 +385,8 @@ void Canvas::spawnParticle()
     juce::Point<float> spawnPos = getSpawnPointCenter (spawn);
     juce::Point<float> initialVelocity = spawn->getMomentumVector() * 2.0f; // Scale up for visibility
     
-    // Create new particle
-    auto* particle = new Particle (spawnPos, initialVelocity);
+    // Create new particle with canvas bounds and current lifespan setting
+    auto* particle = new Particle (spawnPos, initialVelocity, getLocalBounds().toFloat(), particleLifespan);
     particles.add (particle);
     
     LOG_INFO("Spawned particle #" + juce::String(particles.size()) + 
@@ -398,10 +401,16 @@ void Canvas::timerCallback()
 {
     const float deltaTime = 1.0f / 60.0f; // 60 FPS
     
+    // Lock particles for thread safety
+    const juce::ScopedLock lock (particlesLock);
+    
     // Update all particles
     for (int i = particles.size() - 1; i >= 0; --i)
     {
         auto* particle = particles[i];
+        
+        // Update canvas bounds for accurate position mapping
+        particle->setCanvasBounds (getLocalBounds().toFloat());
         
         // Calculate gravity force from all mass points
         juce::Point<float> totalForce (0.0f, 0.0f);
@@ -452,6 +461,8 @@ void Canvas::timerCallback()
 
 void Canvas::drawParticles (juce::Graphics& g)
 {
+    const juce::ScopedLock lock (particlesLock);
+    
     for (auto* particle : particles)
     {
         particle->draw (g);

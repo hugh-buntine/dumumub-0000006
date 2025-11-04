@@ -46,6 +46,13 @@ public:
     
     // Audio buffer reference
     void setAudioBuffer (const juce::AudioBuffer<float>* buffer);
+    
+    // Set particle lifespan for newly spawned particles
+    void setParticleLifespan (float lifespanSeconds) { particleLifespan = lifespanSeconds; }
+    
+    // Access to particles for audio processing (thread-safe copy)
+    juce::OwnedArray<Particle>* getParticles() { return &particles; }
+    juce::CriticalSection& getParticlesLock() { return particlesLock; }
 
 private:
 
@@ -58,6 +65,7 @@ private:
     bool showGravityWaves = true;
     int nextSpawnPointIndex = 0; // Round-robin particle emission
     float gravityStrength = 50000.0f; // Gravity force multiplier
+    float particleLifespan = 30.0f; // Default lifespan for new particles (in seconds)
     
     // File drag state
     bool isDraggingFile = false;
@@ -73,6 +81,9 @@ private:
     // Helper functions
     bool isMouseNearArrowTip (SpawnPoint* spawn, const juce::Point<float>& mousePos) const;
     juce::Point<float> getSpawnPointCenter (SpawnPoint* spawn) const;
+    
+    // Thread safety for particle access
+    juce::CriticalSection particlesLock;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Canvas)
 };
