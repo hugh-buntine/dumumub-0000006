@@ -20,7 +20,8 @@ class Particle
 {
 public:
     Particle (juce::Point<float> position, juce::Point<float> velocity, 
-              const juce::Rectangle<float>& canvasBounds, float maxLifeTime = 30.0f);
+              const juce::Rectangle<float>& canvasBounds, float maxLifeTime = 30.0f,
+              float initialVelocity = 1.0f, float pitchShift = 1.0f);
     ~Particle();
 
     //==============================================================================
@@ -73,12 +74,17 @@ public:
     
     float getGrainAmplitude (const Grain& grain) const; // 0.0 to 1.0 based on envelope
     float getLifetimeAmplitude() const; // 0.0 to 1.0 based on age (fades as particle dies)
+    float getPitchShift() const { return pitchShift; } // Pitch shift multiplier for grain playback
+    float getInitialVelocityMultiplier() const { return initialVelocityMultiplier; } // MIDI velocity (0.0 to 1.0)
     
     // Advance grain playback and clean up finished grains
     void updateGrains (int numSamples);
     
     // Set canvas bounds (needed for pan calculation)
     void setCanvasBounds (const juce::Rectangle<float>& bounds) { canvasBounds = bounds; }
+    
+    // Set the star image for all particles to use
+    static void setStarImage (const juce::Image& image) { starImage = image; }
     
     // Draw the particle
     void draw (juce::Graphics& g);
@@ -90,6 +96,10 @@ private:
     float lifeTime = 0.0f;
     float maxLifeTime = 30.0f; // 30 seconds before particle dies
     float radius = 3.0f;
+    
+    // MIDI parameters
+    float initialVelocityMultiplier = 1.0f; // MIDI velocity mapped to 0.0-1.0
+    float pitchShift = 1.0f; // Playback rate multiplier (1.0 = normal, 2.0 = octave up, 0.5 = octave down)
     
     // Trail system
     struct TrailPoint {
@@ -120,4 +130,8 @@ private:
     int cachedTotalGrainSamples = 2205; // 50ms at 44.1kHz
     int cachedAttackSamples = 220; // 5ms at 44.1kHz
     int cachedReleaseSamples = 220; // 5ms at 44.1kHz
+    
+    // Static star image shared by all particles
+    static juce::Image starImage;
 };
+

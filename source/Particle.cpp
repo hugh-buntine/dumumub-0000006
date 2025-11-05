@@ -1,12 +1,17 @@
 #include "Particle.h"
 #include "Logger.h"
 
+// Initialize static member
+juce::Image Particle::starImage;
+
 //==============================================================================
 Particle::Particle (juce::Point<float> position, juce::Point<float> velocity, 
-                    const juce::Rectangle<float>& canvasBounds, float maxLifeTime)
+                    const juce::Rectangle<float>& canvasBounds, float maxLifeTime,
+                    float initialVelocity, float pitchShift)
     : position (position), velocity (velocity), canvasBounds (canvasBounds),
-      lifeTime (0.0f), maxLifeTime (maxLifeTime), currentSampleRate (0.0),
-      samplesSinceLastGrainTrigger (0),
+      lifeTime (0.0f), maxLifeTime (maxLifeTime), 
+      initialVelocityMultiplier (initialVelocity), pitchShift (pitchShift),
+      currentSampleRate (0.0), samplesSinceLastGrainTrigger (0),
       cachedTotalGrainSamples (2205), cachedAttackSamples (220), cachedReleaseSamples (220)
 {
     // Reserve space for grains to avoid allocations during audio processing
@@ -115,10 +120,8 @@ void Particle::draw (juce::Graphics& g)
     // Calculate base alpha from lifetime (particle fades as it dies)
     float lifetimeAlpha = juce::jmax (0.0f, 1.0f - (lifeTime / maxLifeTime));
     
-    // Color changes based on active grains
-    juce::Colour baseColor = activeGrains.empty()
-        ? juce::Colours::blue   // Blue when silent
-        : juce::Colours::red;   // Red while playing
+    // Trail color is always off-white (#FFFFF2 = RGB 255, 255, 242)
+    juce::Colour trailColor (255, 255, 242);
     
     // Draw trail (from oldest to newest)
     if (trail.size() > 1)
@@ -142,17 +145,35 @@ void Particle::draw (juce::Graphics& g)
             float trailFade = 1.0f - (p1.age / trailFadeTime);
             float alpha = lifetimeAlpha * trailFade * 0.6f; // 0.6 makes trail dimmer than particle
             
-            // Draw line segment
-            g.setColour (baseColor.withAlpha (alpha));
+            // Draw line segment with off-white color
+            g.setColour (trailColor.withAlpha (alpha));
             g.drawLine (p1.position.x, p1.position.y, 
                        p2.position.x, p2.position.y, 
                        2.0f); // Line thickness
         }
     }
     
-    // Draw the particle itself
-    g.setColour (baseColor.withAlpha (lifetimeAlpha));
-    g.fillEllipse (position.x - radius, position.y - radius, radius * 2, radius * 2);
+    // Draw the particle itself using star image if available
+    if (starImage.isValid())
+    {
+        // Draw 15x15 star image centered on particle position with fade
+        float starSize = 15.0f;
+        g.setOpacity (lifetimeAlpha);
+        g.drawImage (starImage, 
+                    juce::Rectangle<float> (position.x - starSize / 2, 
+                                           position.y - starSize / 2, 
+                                           starSize, starSize),
+                    juce::RectanglePlacement::fillDestination);
+    }
+    else
+    {
+        // Fallback to drawing a circle if star image not loaded
+        juce::Colour particleColor = activeGrains.empty()
+            ? juce::Colours::blue   // Blue when silent
+            : juce::Colours::red;   // Red while playing
+        g.setColour (particleColor.withAlpha (lifetimeAlpha));
+        g.fillEllipse (position.x - radius, position.y - radius, radius * 2, radius * 2);
+    }
 }
 
 //==============================================================================

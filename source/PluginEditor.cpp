@@ -4,6 +4,21 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
 {
     juce::ignoreUnused (processorRef);
+    
+    // Load background images
+    backgroundImage = juce::ImageCache::getFromMemory (BinaryData::BACKGROUND_png, 
+                                                       BinaryData::BACKGROUND_pngSize);
+    canvasBackgroundImage = juce::ImageCache::getFromMemory (BinaryData::CANVAS_png, 
+                                                             BinaryData::CANVAS_pngSize);
+    canvasBorderImage = juce::ImageCache::getFromMemory (BinaryData::CANVSBORDER_png, 
+                                                         BinaryData::CANVSBORDER_pngSize);
+    titleImage = juce::ImageCache::getFromMemory (BinaryData::TITLE_png, 
+                                                  BinaryData::TITLE_pngSize);
+    
+    // Load and set star image for particles
+    auto starImage = juce::ImageCache::getFromMemory (BinaryData::STAR_png, 
+                                                      BinaryData::STAR_pngSize);
+    Particle::setStarImage (starImage);
 
     addAndMakeVisible (inspectButton);
 
@@ -23,7 +38,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setSize (500, 800);
 
     addAndMakeVisible (canvas);
-    canvas.setBounds (50, 50, 400, 400);
+    canvas.setBounds (50, 125, 400, 400);
     
     // Give processor reference to canvas for audio rendering
     processorRef.setCanvas (&canvas);
@@ -162,8 +177,40 @@ void PluginEditor::timerCallback()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (255, 255, 242));
-
+    // Draw background image, scaled to fit the entire component
+    if (backgroundImage.isValid())
+    {
+        g.drawImage (backgroundImage, getLocalBounds().toFloat(),
+                    juce::RectanglePlacement::fillDestination);
+    }
+    else
+    {
+        // Fallback if image fails to load
+        g.fillAll (juce::Colour (255, 255, 242));
+    }
+    
+    // Draw canvas background where the canvas is (behind the canvas)
+    if (canvasBackgroundImage.isValid())
+    {
+        // Draw at (25, 100) with 450x450 size
+        g.drawImage (canvasBackgroundImage, juce::Rectangle<float> (25.0f, 100.0f, 450.0f, 450.0f),
+                    juce::RectanglePlacement::fillDestination);
+    }
+    
+    // Draw canvas border on top at (0, 70) with 500x500 size
+    // This goes on top of everything including the canvas due to paint order
+    if (canvasBorderImage.isValid())
+    {
+        g.drawImage (canvasBorderImage, juce::Rectangle<float> (0.0f, 70.0f, 500.0f, 500.0f),
+                    juce::RectanglePlacement::fillDestination);
+    }
+    
+    // Draw title at top (0, 0) with 500x118 size
+    if (titleImage.isValid())
+    {
+        g.drawImage (titleImage, juce::Rectangle<float> (0.0f, 0.0f, 500.0f, 118.0f),
+                    juce::RectanglePlacement::fillDestination);
+    }
 }
 
 void PluginEditor::resized()
@@ -177,8 +224,8 @@ void PluginEditor::resized()
     // Particle count label at top right
     particleCountLabel.setBounds (360, 10, 90, 30);
     
-    // Canvas in center
-    canvas.setBounds (50, 50, 400, 400);
+    // Canvas - positioned at (50, 125) with 400x400 size
+    canvas.setBounds (50, 125, 400, 400);
     
     // Buttons below canvas
     addSpawnPointButton.setBounds (50, 460, 100, 30);

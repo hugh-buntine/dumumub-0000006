@@ -30,8 +30,8 @@ Canvas::~Canvas()
 //==============================================================================
 void Canvas::paint (juce::Graphics& g)
 {
-    // Fill background with off white
-    g.fillAll (juce::Colour (255, 255, 242));
+    // Make canvas transparent so the background image shows through
+    // (Don't fill with any color)
     
     // Draw green border if dragging valid audio file
     if (isDraggingFile)
@@ -52,15 +52,6 @@ void Canvas::paint (juce::Graphics& g)
     
     // Draw momentum arrows (on top of gravity waves, behind spawn points)
     drawMomentumArrows (g);
-    
-    // Draw black outline
-    g.setColour (juce::Colours::black);
-    g.drawRect (getLocalBounds(), 1);
-    
-    // Draw component name in center
-    g.setColour (juce::Colours::black);
-    g.setFont (15.0f);
-    g.drawFittedText ("Canvas", getLocalBounds(), juce::Justification::centred, 1);
 }
 
 void Canvas::resized()
@@ -395,13 +386,61 @@ void Canvas::spawnParticle()
     juce::Point<float> initialVelocity = spawn->getMomentumVector() * 2.0f; // Scale up for visibility
     
     // Create new particle with canvas bounds and current lifespan setting
-    auto* particle = new Particle (spawnPos, initialVelocity, getLocalBounds().toFloat(), particleLifespan);
+    // Default MIDI values: velocity = 1.0 (full), pitch = 1.0 (no shift)
+    auto* particle = new Particle (spawnPos, initialVelocity, getLocalBounds().toFloat(), 
+                                    particleLifespan, 1.0f, 1.0f);
     particles.add (particle);
     
     LOG_INFO("Spawned particle #" + juce::String(particles.size()) + 
              " at (" + juce::String(spawnPos.x) + ", " + juce::String(spawnPos.y) + 
              ") with velocity (" + juce::String(initialVelocity.x) + ", " + 
              juce::String(initialVelocity.y) + ")");
+    
+    repaint();
+}
+
+void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
+{
+    if (spawnPoints.isEmpty())
+    {
+        LOG_WARNING("Cannot spawn particle from MIDI - no spawn points exist!");
+        return;
+    }
+    
+    // Lock particles for thread safety
+    const juce::ScopedLock lock (particlesLock);
+    
+    // Check if we need to remove the oldest particle (max 32 particles)
+    const int maxParticles = 32;
+    if (particles.size() >= maxParticles)
+    {
+        // Remove the oldest particle (index 0)
+        particles.remove (0);
+    }
+    
+    // Get the spawn point using round-robin
+    auto* spawn = spawnPoints[nextSpawnPointIndex];
+    nextSpawnPointIndex = (nextSpawnPointIndex + 1) % spawnPoints.size();
+    
+    // Get spawn position and initial velocity from momentum arrow
+    juce::Point<float> spawnPos = getSpawnPointCenter (spawn);
+    juce::Point<float> initialVelocity = spawn->getMomentumVector() * 2.0f; // Scale up for visibility
+    
+    // Calculate pitch shift from MIDI note (C3 = 60 = no shift)
+    // Each semitone = 2^(1/12) ratio
+    float semitoneOffset = midiNote - 60; // C3 is reference
+    float pitchShift = std::pow (2.0f, semitoneOffset / 12.0f);
+    
+    // Create new particle with MIDI parameters
+    auto* particle = new Particle (spawnPos, initialVelocity, getLocalBounds().toFloat(), 
+                                    particleLifespan, midiVelocity, pitchShift);
+    particles.add (particle);
+    
+    LOG_INFO("Spawned MIDI particle #" + juce::String(particles.size()) + 
+             " - Note: " + juce::String(midiNote) + 
+             " (" + juce::MidiMessage::getMidiNoteName(midiNote, true, true, 3) + ")" +
+             ", Velocity: " + juce::String(midiVelocity, 2) + 
+             ", Pitch: " + juce::String(pitchShift, 3) + "x");
     
     repaint();
 }

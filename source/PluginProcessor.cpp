@@ -208,8 +208,6 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                               juce::MidiBuffer& midiMessages)
 {
-    juce::ignoreUnused (midiMessages);
-
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -217,6 +215,28 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Clear all output channels
     for (auto i = 0; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
+
+    // Process MIDI messages to spawn particles
+    if (canvas != nullptr)
+    {
+        for (const auto metadata : midiMessages)
+        {
+            auto message = metadata.getMessage();
+            
+            if (message.isNoteOn())
+            {
+                int midiNote = message.getNoteNumber();
+                float midiVelocity = message.getVelocity() / 127.0f; // Normalize to 0.0-1.0
+                
+                // Spawn particle from MIDI on the message thread (safe for canvas operations)
+                juce::MessageManager::callAsync ([this, midiNote, midiVelocity]()
+                {
+                    if (canvas != nullptr)
+                        canvas->spawnParticleFromMidi (midiNote, midiVelocity);
+                });
+            }
+        }
+    }
 
     // Check if we have audio file loaded and canvas available
     if (!hasAudioFileLoaded() || canvas == nullptr || audioFileBuffer.getNumSamples() == 0)
@@ -280,8 +300,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Apply lifetime fade (quieter as particle dies)
             amplitude *= particle->getLifetimeAmplitude();
             
+            // Apply MIDI velocity
+            amplitude *= particle->getInitialVelocityMultiplier();
+            
             // Apply master gain
             amplitude *= masterGainLinear;
+            
+            // Get pitch shift for this particle
+            float pitchShift = particle->getPitchShift();
             
             // Calculate stereo gains from main pan
             float panAngle = (crossfade.mainPan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
@@ -303,22 +329,36 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 rightGain *= mainAmount;
             }
             
-            // Render grain samples
+            // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
-                int sourceSample = grainStartSample + grainPosition + i;
+                // Calculate source position with pitch shift (float for interpolation)
+                float sourcePosition = grainStartSample + ((grainPosition + i) * pitchShift);
                 
-                // Bounds check and wrap if needed
-                if (sourceSample >= audioFileBuffer.getNumSamples())
-                    sourceSample = sourceSample % audioFileBuffer.getNumSamples();
+                // Linear interpolation between samples for smooth pitch shift
+                int sourceSample1 = static_cast<int>(sourcePosition);
+                int sourceSample2 = sourceSample1 + 1;
+                float fraction = sourcePosition - sourceSample1;
                 
-                // Get audio sample (mono or averaged if stereo source)
-                float audioSample = 0.0f;
+                // Wrap samples if needed
+                sourceSample1 = sourceSample1 % audioFileBuffer.getNumSamples();
+                sourceSample2 = sourceSample2 % audioFileBuffer.getNumSamples();
+                if (sourceSample1 < 0) sourceSample1 += audioFileBuffer.getNumSamples();
+                if (sourceSample2 < 0) sourceSample2 += audioFileBuffer.getNumSamples();
+                
+                // Get audio samples (mono or averaged if stereo source)
+                float audioSample1 = 0.0f;
+                float audioSample2 = 0.0f;
                 for (int channel = 0; channel < audioFileBuffer.getNumChannels(); ++channel)
                 {
-                    audioSample += audioFileBuffer.getSample (channel, sourceSample);
+                    audioSample1 += audioFileBuffer.getSample (channel, sourceSample1);
+                    audioSample2 += audioFileBuffer.getSample (channel, sourceSample2);
                 }
-                audioSample /= audioFileBuffer.getNumChannels();
+                audioSample1 /= audioFileBuffer.getNumChannels();
+                audioSample2 /= audioFileBuffer.getNumChannels();
+                
+                // Linear interpolation
+                float audioSample = audioSample1 + fraction * (audioSample2 - audioSample1);
                 
                 // Write to output with panning (main + crossfade)
                 if (totalNumOutputChannels >= 1)

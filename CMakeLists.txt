@@ -87,7 +87,13 @@ juce_add_plugin("${PROJECT_NAME}"
     # This is how it's listed in the DAW
     # This can be different from PROJECT_NAME and can have spaces!
     # You might want to use v${MAJOR_VERSION} here once you go to v2...
-    PRODUCT_NAME "${PRODUCT_NAME}")
+    PRODUCT_NAME "${PRODUCT_NAME}"
+    
+    # Configure as MIDI instrument/synth
+    IS_SYNTH TRUE                         # This is a synthesizer/instrument
+    NEEDS_MIDI_INPUT TRUE                 # Requires MIDI input
+    NEEDS_MIDI_OUTPUT FALSE               # Doesn't output MIDI
+    IS_MIDI_EFFECT FALSE)                 # Not a MIDI effect
 
 # This lets us use our code in both the JUCE targets and our Test target
 # Without running into ODR violations
@@ -95,7 +101,7 @@ add_library(SharedCode INTERFACE)
 
 clap_juce_extensions_plugin(TARGET "${PROJECT_NAME}"
     CLAP_ID "${BUNDLE_ID}"
-    CLAP_FEATURES audio-effect)
+    CLAP_FEATURES instrument synthesizer)
 
 # Enable fast math, C++20 and a few other target defaults
 include(SharedCodeDefaults)

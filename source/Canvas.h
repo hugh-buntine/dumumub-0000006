@@ -22,6 +22,7 @@ public:
     void newSpawnPoint();
     void newMassPoint();
     void spawnParticle();
+    void spawnParticleFromMidi (int midiNote, float midiVelocity); // Spawn with MIDI parameters
     void drawGravityWaves (juce::Graphics& g);
     void drawMomentumArrows (juce::Graphics& g);
     void drawParticles (juce::Graphics& g);

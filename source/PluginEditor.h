@@ -4,6 +4,7 @@
 #include "BinaryData.h"
 #include "melatonin_inspector/melatonin_inspector.h"
 #include "Canvas.h"
+#include "Particle.h"
 
 //==============================================================================
 class PluginEditor : public juce::AudioProcessorEditor,
@@ -55,6 +56,12 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> releaseAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lifespanAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterGainAttachment;
+    
+    // Background images
+    juce::Image backgroundImage;
+    juce::Image canvasBackgroundImage;
+    juce::Image canvasBorderImage;
+    juce::Image titleImage;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
