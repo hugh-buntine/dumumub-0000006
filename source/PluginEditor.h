@@ -5,6 +5,46 @@
 #include "melatonin_inspector/melatonin_inspector.h"
 #include "Canvas.h"
 #include "Particle.h"
+#include "SpawnPoint.h"
+#include "MassPoint.h"
+
+//==============================================================================
+// Custom LookAndFeel for sliders with knob images
+class CustomSliderLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    CustomSliderLookAndFeel() = default;
+    
+    void setKnobImages (const juce::Image& normal, const juce::Image& hover)
+    {
+        knobImage = normal;
+        knobHoverImage = hover;
+    }
+    
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                          float sliderPos, float minSliderPos, float maxSliderPos,
+                          const juce::Slider::SliderStyle style, juce::Slider& slider) override
+    {
+        juce::ignoreUnused (minSliderPos, maxSliderPos, style, x, width);
+        
+        // Draw the knob image (no track line)
+        auto& imageToUse = slider.isMouseOverOrDragging() ? knobHoverImage : knobImage;
+        if (imageToUse.isValid())
+        {
+            auto knobWidth = 40.0f;
+            auto knobHeight = 40.0f;
+            auto knobX = sliderPos - knobWidth * 0.5f;
+            auto knobY = y + (height - knobHeight) * 0.5f;
+            
+            g.drawImage (imageToUse, juce::Rectangle<float> (knobX, knobY, knobWidth, knobHeight),
+                        juce::RectanglePlacement::fillDestination);
+        }
+    }
+    
+private:
+    juce::Image knobImage;
+    juce::Image knobHoverImage;
+};
 
 //==============================================================================
 class PluginEditor : public juce::AudioProcessorEditor,
@@ -62,6 +102,15 @@ private:
     juce::Image canvasBackgroundImage;
     juce::Image canvasBorderImage;
     juce::Image titleImage;
+    juce::Image sliderCasesImage;
+    
+    // Custom LookAndFeel for each slider
+    CustomSliderLookAndFeel attackLookAndFeel;
+    CustomSliderLookAndFeel releaseLookAndFeel;
+    CustomSliderLookAndFeel lifespanLookAndFeel;
+    CustomSliderLookAndFeel grainSizeLookAndFeel;
+    CustomSliderLookAndFeel grainFreqLookAndFeel;
+    CustomSliderLookAndFeel masterGainLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

@@ -114,6 +114,13 @@ void Canvas::newSpawnPoint()
             repaint();
         };
         
+        // Set callback for delete request
+        newPoint->onDeleteRequested = [this, newPoint]() {
+            spawnPoints.removeObject (newPoint);
+            repaint();
+            LOG_INFO("Deleted spawn point");
+        };
+        
         // Place at random position on canvas
         if (getWidth() > 0 && getHeight() > 0)
         {
@@ -154,34 +161,8 @@ void Canvas::drawGravityWaves (juce::Graphics& g)
     if (massPoints.isEmpty())
         return;
     
-    // Draw ripples emanating from each mass point
-    g.setColour (juce::Colours::grey.withAlpha (0.3f));
-    
-    int numRipples = 10;
-    float maxRadius = 200.0f;
-    
-    for (auto* mass : massPoints)
-    {
-        juce::Point<float> center (mass->getBounds().getCentreX(), 
-                                   mass->getBounds().getCentreY());
-        
-        // Scale ripple intensity and spacing based on mass multiplier
-        float intensityScale = mass->getMassMultiplier();
-        
-        // Larger masses have tighter/more frequent ripples
-        int adjustedNumRipples = static_cast<int>(numRipples * intensityScale);
-        
-        // Draw concentric circles (more ripples = tighter spacing)
-        for (int i = 1; i <= adjustedNumRipples; ++i)
-        {
-            float radius = (maxRadius / adjustedNumRipples) * i;
-            float alpha = 0.3f * (1.0f - (float)i / adjustedNumRipples) * juce::jmin(intensityScale, 2.0f);
-            
-            g.setColour (juce::Colours::grey.withAlpha (alpha));
-            g.drawEllipse (center.x - radius, center.y - radius, 
-                          radius * 2, radius * 2, 1.0f);
-        }
-    }
+    // Ripples around mass points removed - vortex images are now used instead
+    // (Keeping the interference pattern visualization below)
     
     // If there are multiple mass points, draw interference patterns
     if (massPoints.size() >= 2)
@@ -247,6 +228,10 @@ void Canvas::drawMomentumArrows (juce::Graphics& g)
     
     for (auto* spawn : spawnPoints)
     {
+        // Only draw arrow for selected spawn points
+        if (!spawn->isSelected())
+            continue;
+        
         juce::Point<float> center = getSpawnPointCenter (spawn);
         juce::Point<float> momentumVector = spawn->getMomentumVector();
         juce::Point<float> arrowEnd = center + momentumVector;
@@ -281,16 +266,22 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
 {
     juce::Point<float> mousePos = event.position;
     
-    // Check if clicking near any arrow tip
+    // Check if clicking near any arrow tip (only for selected spawn points)
     for (auto* spawn : spawnPoints)
     {
-        if (isMouseNearArrowTip (spawn, mousePos))
+        if (spawn->isSelected() && isMouseNearArrowTip (spawn, mousePos))
         {
             draggedArrowSpawnPoint = spawn;
             setMouseCursor (juce::MouseCursor::CrosshairCursor);
             LOG_INFO("Started dragging arrow for spawn point");
             return;
         }
+    }
+    
+    // If not clicking on arrow or spawn point, deselect all spawn points
+    for (auto* spawn : spawnPoints)
+    {
+        spawn->setSelected (false);
     }
     
     // If not clicking on arrow, allow spawn points to handle their own dragging
@@ -448,6 +439,20 @@ void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
 void Canvas::timerCallback()
 {
     const float deltaTime = 1.0f / 60.0f; // 60 FPS
+    
+    // Update spawn point rotations
+    for (auto* spawn : spawnPoints)
+    {
+        spawn->updateRotation (deltaTime);
+        spawn->repaint();
+    }
+    
+    // Update mass point rotations (black holes)
+    for (auto* mass : massPoints)
+    {
+        mass->updateRotation (deltaTime);
+        mass->repaint();
+    }
     
     // Lock particles for thread safety
     const juce::ScopedLock lock (particlesLock);
