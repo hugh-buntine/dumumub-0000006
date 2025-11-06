@@ -16,6 +16,18 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                   BinaryData::TITLE_pngSize);
     sliderCasesImage = juce::ImageCache::getFromMemory (BinaryData::SLIDERCASES_png, 
                                                         BinaryData::SLIDERCASES_pngSize);
+    dropTextImage = juce::ImageCache::getFromMemory (BinaryData::DROPTEXT_png, 
+                                                     BinaryData::DROPTEXT_pngSize);
+    
+    // Load custom font (Duru Sans) - use the correct method for custom fonts from memory
+    customTypeface = juce::Typeface::createSystemTypefaceFor (BinaryData::DuruSansRegular_ttf,
+                                                               BinaryData::DuruSansRegular_ttfSize);
+    
+    // Debug: Check if font loaded
+    if (customTypeface != nullptr)
+        DBG("Duru Sans font loaded successfully. Family: " + customTypeface->getName());
+    else
+        DBG("ERROR: Duru Sans font failed to load!");
     
     // Load knob images and set up custom LookAndFeel for each slider
     auto knob1 = juce::ImageCache::getFromMemory (BinaryData::KNOB1_png, BinaryData::KNOB1_pngSize);
@@ -110,17 +122,22 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     canvas.onAudioFileLoaded = [this](const juce::File& file) {
         processorRef.loadAudioFile (file);
         // Update label with filename
-        audioFileLabel.setText ("Audio: " + file.getFileName(), juce::dontSendNotification);
+        audioFileLabel.setText (file.getFileName(), juce::dontSendNotification);
         // Pass audio buffer to canvas for waveform display
         canvas.setAudioBuffer (processorRef.getAudioBuffer());
     };
     
-    // Setup audio file label
+    // Setup audio file label (will be drawn manually in paintOverChildren)
     addAndMakeVisible (audioFileLabel);
-    audioFileLabel.setFont (juce::FontOptions (14.0f));
+    if (customTypeface != nullptr)
+        audioFileLabel.setFont (juce::FontOptions (customTypeface).withHeight (12.0f));
+    else
+        audioFileLabel.setFont (juce::FontOptions (12.0f));
     audioFileLabel.setJustificationType (juce::Justification::centred);
-    audioFileLabel.setText ("No audio file loaded", juce::dontSendNotification);
-    audioFileLabel.setColour (juce::Label::textColourId, juce::Colours::black);
+    audioFileLabel.setText ("", juce::dontSendNotification); // Empty - we'll draw drop-text image or filename
+    // Make label text transparent so we can draw it ourselves in paintOverChildren
+    audioFileLabel.setColour (juce::Label::textColourId, juce::Colours::transparentBlack);
+    audioFileLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     
     // Setup particle count label
     addAndMakeVisible (particleCountLabel);
@@ -250,21 +267,6 @@ void PluginEditor::paint (juce::Graphics& g)
                     juce::RectanglePlacement::fillDestination);
     }
     
-    // Draw canvas border on top at (0, 70) with 500x500 size
-    // This goes on top of everything including the canvas due to paint order
-    if (canvasBorderImage.isValid())
-    {
-        g.drawImage (canvasBorderImage, juce::Rectangle<float> (0.0f, 70.0f, 500.0f, 500.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
-    
-    // Draw slider cases at (40, 560) with 415x185 size
-    if (sliderCasesImage.isValid())
-    {
-        g.drawImage (sliderCasesImage, juce::Rectangle<float> (40.0f, 560.0f, 415.0f, 185.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
-    
     // Draw title at top (0, 0) with 500x118 size
     if (titleImage.isValid())
     {
@@ -273,19 +275,88 @@ void PluginEditor::paint (juce::Graphics& g)
     }
 }
 
+void PluginEditor::paintOverChildren (juce::Graphics& g)
+{
+    // Draw canvas border on top of everything at (0, 70) with 500x500 size
+    if (canvasBorderImage.isValid())
+    {
+        g.drawImage (canvasBorderImage, juce::Rectangle<float> (0.0f, 70.0f, 500.0f, 500.0f),
+                    juce::RectanglePlacement::fillDestination);
+    }
+    
+    // Draw slider cases on top of sliders at (40, 560) with 415x185 size
+    if (sliderCasesImage.isValid())
+    {
+        g.drawImage (sliderCasesImage, juce::Rectangle<float> (40.0f, 560.0f, 415.0f, 185.0f),
+                    juce::RectanglePlacement::fillDestination);
+    }
+    
+    // Draw drop-text image or filename at top of canvas
+    auto labelBounds = audioFileLabel.getBounds();
+    
+    if (audioFileLabel.getText().isEmpty())
+    {
+        // No file loaded - draw drop-text image at 360px wide
+        if (dropTextImage.isValid())
+        {
+            auto imageWidth = 360.0f;
+            auto imageHeight = 50.0f;
+            auto x = labelBounds.getCentreX() - imageWidth * 0.5f;
+            auto y = labelBounds.getY();
+            
+            g.drawImage (dropTextImage, juce::Rectangle<float> (x, y, imageWidth, imageHeight),
+                        juce::RectanglePlacement::centred);
+        }
+    }
+    else
+    {
+        // File loaded - draw filename in custom font with 25% opacity and letter spacing
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.25f)); // #FFFFF2 at 25% opacity
+        
+        if (customTypeface != nullptr)
+        {
+            // Get text, remove extension, convert to lowercase
+            auto text = audioFileLabel.getText();
+            if (text.contains("."))
+                text = text.upToFirstOccurrenceOf(".", false, false);
+            text = text.toLowerCase();
+            
+            // Calculate letter spacing to spread text across 340px
+            auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (12.0f));
+            auto naturalWidth = font.getStringWidthFloat (text);
+            auto targetWidth = 340.0f;
+            auto extraSpaceNeeded = targetWidth - naturalWidth;
+            auto letterSpacing = (text.length() > 1) ? extraSpaceNeeded / (text.length() - 1) : 0.0f;
+            
+            // Draw text with custom letter spacing, moved down 12px
+            font = font.withExtraKerningFactor (letterSpacing / font.getHeight());
+            g.setFont (font);
+            auto adjustedBounds = labelBounds.toFloat().withY(labelBounds.getY() + 12);
+            g.drawText (text, adjustedBounds, juce::Justification::centred, true);
+        }
+        else
+        {
+            g.setFont (12.0f);
+            auto adjustedBounds = labelBounds.toFloat().withY(labelBounds.getY() + 12);
+            g.drawText (audioFileLabel.getText(), adjustedBounds, 
+                       juce::Justification::centred, true);
+        }
+    }
+}
+
 void PluginEditor::resized()
 {
     // layout the positions of your child components here
     inspectButton.setBounds (getWidth() - 50, getHeight() - 50, 50, 50);
     
-    // Audio file label at top
-    audioFileLabel.setBounds (50, 10, 300, 30);
+    // Canvas - positioned at (50, 125) with 400x400 size
+    canvas.setBounds (50, 125, 400, 400);
+    
+    // Audio file label at top of canvas (inside canvas area)
+    audioFileLabel.setBounds (50, 130, 400, 25); // 5px from top of canvas
     
     // Particle count label at top right
     particleCountLabel.setBounds (360, 10, 90, 30);
-    
-    // Canvas - positioned at (50, 125) with 400x400 size
-    canvas.setBounds (50, 125, 400, 400);
     
     // Buttons below canvas
     addSpawnPointButton.setBounds (50, 460, 100, 30);

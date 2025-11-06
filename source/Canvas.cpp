@@ -529,11 +529,11 @@ void Canvas::drawWaveform (juce::Graphics& g)
     
     const int canvasHeight = getHeight();
     const int canvasWidth = getWidth();
+    const float minOpacity = 0.1f;  // Base opacity when no particles
+    const float maxOpacity = 1.0f;   // Max opacity when particle is at edge
+    const float influenceRadius = 30.0f; // How far from a particle affects the waveform
     
-    // Draw horizontal line every 2 vertical pixels
-    g.setColour (juce::Colours::black);
-    
-    for (int y = 0; y < canvasHeight; y += 2)
+    for (int y = 0; y < canvasHeight; y += 4)
     {
         // Map y position to sample position (bottom = start, top = end)
         float normalizedPosition = 1.0f - (static_cast<float>(y) / canvasHeight);
@@ -552,13 +552,76 @@ void Canvas::drawWaveform (juce::Graphics& g)
         float lineHalfWidth = magnitude * (canvasWidth * 0.4f); // Max 40% of canvas width each side
         float centerX = canvasWidth / 2.0f;
         
-        // Draw horizontal line centered in canvas
-        if (lineHalfWidth > 0.5f)
+        if (lineHalfWidth < 0.5f)
+            continue;
+            
+        // Calculate opacity influence from nearby particles
+        float maxLeftInfluence = 0.0f;
+        float maxRightInfluence = 0.0f;
+        float maxCenterInfluence = 0.0f;
+        
+        for (auto* particle : particles)
         {
-            g.drawLine (centerX - lineHalfWidth, static_cast<float>(y),
-                       centerX + lineHalfWidth, static_cast<float>(y),
-                       1.0f);
+            if (particle == nullptr)
+                continue;
+                
+            auto pos = particle->getPosition();
+            float distance = std::abs(pos.y - y);
+            
+            // Only consider particles near this Y line
+            if (distance < influenceRadius)
+            {
+                // Calculate influence (1.0 when particle is on the line, 0.0 at radius)
+                float influence = 1.0f - (distance / influenceRadius);
+                influence = influence * influence; // Square for smoother falloff
+                
+                // Factor in particle's lifetime (dying particles have less effect)
+                float lifetimeAmp = particle->getLifetimeAmplitude();
+                influence *= lifetimeAmp;
+                
+                // Calculate particle position: 0.0 = far left, 0.5 = center, 1.0 = far right
+                float normalizedX = pos.x / canvasWidth;
+                
+                if (normalizedX < 0.5f)
+                {
+                    // Particle on left side
+                    float leftSidedness = (0.5f - normalizedX) * 2.0f; // 1.0 at far left, 0.0 at center
+                    maxLeftInfluence = juce::jmax(maxLeftInfluence, influence * leftSidedness);
+                    maxCenterInfluence = juce::jmax(maxCenterInfluence, influence * (1.0f - leftSidedness));
+                }
+                else
+                {
+                    // Particle on right side
+                    float rightSidedness = (normalizedX - 0.5f) * 2.0f; // 1.0 at far right, 0.0 at center
+                    maxRightInfluence = juce::jmax(maxRightInfluence, influence * rightSidedness);
+                    maxCenterInfluence = juce::jmax(maxCenterInfluence, influence * (1.0f - rightSidedness));
+                }
+            }
         }
+        
+        // Calculate final opacities
+        // When particle is at edge: that side = 100%, other side = 10%
+        // When particle is at center: both sides = 55% (halfway between 100% and 10%)
+        float leftOpacity = minOpacity + maxLeftInfluence * (maxOpacity - minOpacity) + maxCenterInfluence * (maxOpacity - minOpacity) * 0.5f;
+        float rightOpacity = minOpacity + maxRightInfluence * (maxOpacity - minOpacity) + maxCenterInfluence * (maxOpacity - minOpacity) * 0.5f;
+        
+        // Clamp to valid range
+        leftOpacity = juce::jlimit(minOpacity, maxOpacity, leftOpacity);
+        rightOpacity = juce::jlimit(minOpacity, maxOpacity, rightOpacity);
+        
+        // Draw line with horizontal gradient from left opacity to right opacity
+        juce::ColourGradient gradient(
+            juce::Colour(0xFF, 0xFF, 0xF2).withAlpha(leftOpacity),  // Left color
+            centerX - lineHalfWidth, static_cast<float>(y),         // Left point
+            juce::Colour(0xFF, 0xFF, 0xF2).withAlpha(rightOpacity), // Right color
+            centerX + lineHalfWidth, static_cast<float>(y),         // Right point
+            false                                                    // Not radial
+        );
+        
+        g.setGradientFill(gradient);
+        g.drawLine(centerX - lineHalfWidth, static_cast<float>(y),
+                   centerX + lineHalfWidth, static_cast<float>(y),
+                   1.0f);
     }
 }
 

@@ -58,6 +58,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void timerCallback() override;
+    
+    void paintOverChildren (juce::Graphics& g) override;
 
 private:
     // This reference is provided as a quick way for your editor to
@@ -103,6 +105,10 @@ private:
     juce::Image canvasBorderImage;
     juce::Image titleImage;
     juce::Image sliderCasesImage;
+    juce::Image dropTextImage;
+    
+    // Custom font
+    juce::Typeface::Ptr customTypeface;
     
     // Custom LookAndFeel for each slider
     CustomSliderLookAndFeel attackLookAndFeel;
