@@ -9,6 +9,58 @@
 #include "MassPoint.h"
 
 //==============================================================================
+// Custom toggle button with 4 image states
+class ToggleImageButton : public juce::Button
+{
+public:
+    ToggleImageButton() : juce::Button ("") 
+    {
+        setClickingTogglesState (true);
+    }
+    
+    void setImages (const juce::Image& normalOff, const juce::Image& hoverOff,
+                   const juce::Image& normalOn, const juce::Image& hoverOn)
+    {
+        imageNormalOff = normalOff;
+        imageHoverOff = hoverOff;
+        imageNormalOn = normalOn;
+        imageHoverOn = hoverOn;
+        repaint();
+    }
+    
+    void paintButton (juce::Graphics& g, bool shouldDrawButtonAsHighlighted, 
+                     bool shouldDrawButtonAsDown) override
+    {
+        juce::ignoreUnused (shouldDrawButtonAsDown);
+        
+        juce::Image imageToDraw;
+        
+        if (getToggleState())
+        {
+            // Button is pressed/on
+            imageToDraw = shouldDrawButtonAsHighlighted ? imageHoverOn : imageNormalOn;
+        }
+        else
+        {
+            // Button is unpressed/off
+            imageToDraw = shouldDrawButtonAsHighlighted ? imageHoverOff : imageNormalOff;
+        }
+        
+        if (imageToDraw.isValid())
+        {
+            g.drawImage (imageToDraw, getLocalBounds().toFloat(),
+                        juce::RectanglePlacement::fillDestination);
+        }
+    }
+    
+private:
+    juce::Image imageNormalOff;
+    juce::Image imageHoverOff;
+    juce::Image imageNormalOn;
+    juce::Image imageHoverOn;
+};
+
+//==============================================================================
 // Custom LookAndFeel for sliders with knob images
 class CustomSliderLookAndFeel : public juce::LookAndFeel_V4
 {
@@ -74,6 +126,10 @@ private:
     juce::TextButton addMassPointButton { "Add Mass" };
     juce::TextButton emitParticleButton { "Emit Particle" };
     
+    // Image buttons
+    ToggleImageButton graphicsButton;
+    ToggleImageButton breakCpuButton;
+    
     juce::Label audioFileLabel;
     juce::Label particleCountLabel;
     
@@ -106,6 +162,16 @@ private:
     juce::Image titleImage;
     juce::Image sliderCasesImage;
     juce::Image dropTextImage;
+    
+    // Button images
+    juce::Image graphicsButtonUnpressed;
+    juce::Image graphicsButtonUnpressedHover;
+    juce::Image graphicsButtonPressed;
+    juce::Image graphicsButtonPressedHover;
+    juce::Image breakCpuButtonUnpressed;
+    juce::Image breakCpuButtonUnpressedHover;
+    juce::Image breakCpuButtonPressed;
+    juce::Image breakCpuButtonPressedHover;
     
     // Custom font
     juce::Typeface::Ptr customTypeface;

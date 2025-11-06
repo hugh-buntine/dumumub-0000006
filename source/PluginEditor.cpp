@@ -54,6 +54,35 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     auto knob6Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB6HOVER_png, BinaryData::KNOB6HOVER_pngSize);
     masterGainLookAndFeel.setKnobImages (knob6, knob6Hover);
     
+    // Load button images
+    graphicsButtonUnpressed = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONUNPRESSED_png, 
+                                                               BinaryData::GRAPHICSBUTTONUNPRESSED_pngSize);
+    graphicsButtonUnpressedHover = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONUNPRESSEDHOVER_png, 
+                                                                    BinaryData::GRAPHICSBUTTONUNPRESSEDHOVER_pngSize);
+    graphicsButtonPressed = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONPRESSED_png, 
+                                                             BinaryData::GRAPHICSBUTTONPRESSED_pngSize);
+    graphicsButtonPressedHover = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONPRESSEDHOVER_png, 
+                                                                  BinaryData::GRAPHICSBUTTONPRESSEDHOVER_pngSize);
+    
+    breakCpuButtonUnpressed = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUUNPRESSED_png, 
+                                                               BinaryData::BREAKCPUUNPRESSED_pngSize);
+    breakCpuButtonUnpressedHover = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUUNPRESSEDHOVER_png, 
+                                                                    BinaryData::BREAKCPUUNPRESSEDHOVER_pngSize);
+    breakCpuButtonPressed = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUPRESSED_png, 
+                                                             BinaryData::BREAKCPUPRESSED_pngSize);
+    breakCpuButtonPressedHover = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUPRESSEDHOVER_png, 
+                                                                  BinaryData::BREAKCPUPRESSEDHOVER_pngSize);
+    
+    // Setup Graphics button
+    addAndMakeVisible (graphicsButton);
+    graphicsButton.setImages (graphicsButtonUnpressed, graphicsButtonUnpressedHover,
+                             graphicsButtonPressed, graphicsButtonPressedHover);
+    
+    // Setup Break CPU button
+    addAndMakeVisible (breakCpuButton);
+    breakCpuButton.setImages (breakCpuButtonUnpressed, breakCpuButtonUnpressedHover,
+                             breakCpuButtonPressed, breakCpuButtonPressedHover);
+    
     // Load and set star image for particles
     auto starImage = juce::ImageCache::getFromMemory (BinaryData::STAR_png, 
                                                       BinaryData::STAR_pngSize);
@@ -266,13 +295,6 @@ void PluginEditor::paint (juce::Graphics& g)
         g.drawImage (canvasBackgroundImage, juce::Rectangle<float> (25.0f, 100.0f, 450.0f, 450.0f),
                     juce::RectanglePlacement::fillDestination);
     }
-    
-    // Draw title at top (0, 0) with 500x118 size
-    if (titleImage.isValid())
-    {
-        g.drawImage (titleImage, juce::Rectangle<float> (0.0f, 0.0f, 500.0f, 118.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
 }
 
 void PluginEditor::paintOverChildren (juce::Graphics& g)
@@ -288,6 +310,13 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
     if (sliderCasesImage.isValid())
     {
         g.drawImage (sliderCasesImage, juce::Rectangle<float> (40.0f, 560.0f, 415.0f, 185.0f),
+                    juce::RectanglePlacement::fillDestination);
+    }
+    
+    // Draw title at top (0, 0) with 500x118 size - on top of everything
+    if (titleImage.isValid())
+    {
+        g.drawImage (titleImage, juce::Rectangle<float> (0.0f, 0.0f, 500.0f, 118.0f),
                     juce::RectanglePlacement::fillDestination);
     }
     
@@ -387,4 +416,18 @@ void PluginEditor::resized()
     // Row 3: Frequency (left), Master Gain (right) - moved down 5px, then up 2px = +3px
     grainFreqSlider.setBounds (leftColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
     masterGainSlider.setBounds (rightColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
+    
+    // Image buttons below slider cases
+    // Slider cases end at y=745 (560 + 185)
+    int buttonY = 750; // 5px below slider cases
+    int buttonWidth = 200;
+    int buttonHeight = 40;
+    int buttonSpacing = 15; // Space between buttons
+    
+    // Center both buttons horizontally in the slider cases area (40, 415 wide)
+    int totalWidth = buttonWidth * 2 + buttonSpacing;
+    int startX = sliderCasesX + (415 - totalWidth) / 2;
+    
+    graphicsButton.setBounds (startX, buttonY, buttonWidth, buttonHeight);
+    breakCpuButton.setBounds (startX + buttonWidth + buttonSpacing, buttonY, buttonWidth, buttonHeight);
 }
