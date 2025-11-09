@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_audio_basics/juce_audio_basics.h>
+#include "CustomPopupMenuLookAndFeel.h"
 
 //==============================================================================
 class SpawnPoint : public juce::Component
@@ -75,6 +76,9 @@ private:
     // Hover and selection state
     bool isHovered = false;
     bool selected = false;
+    
+    // Custom popup menu look and feel
+    CustomPopupMenuLookAndFeel popupMenuLookAndFeel;
     
     // Helper to show menu
     void showMenu();

@@ -6,6 +6,7 @@
 #include "SpawnPoint.h"
 #include "MassPoint.h"
 #include "Particle.h"
+#include "CustomPopupMenuLookAndFeel.h"
 
 //==============================================================================
 class Canvas : public juce::Component, 
@@ -51,14 +52,19 @@ public:
     // Set particle lifespan for newly spawned particles
     void setParticleLifespan (float lifespanSeconds) { particleLifespan = lifespanSeconds; }
     
+    // Set break CPU mode (unlimited particles/masses/spawn points)
+    void setBreakCpuMode (bool enabled);
+    
     // Access to particles for audio processing (thread-safe copy)
     juce::OwnedArray<Particle>* getParticles() { return &particles; }
     juce::CriticalSection& getParticlesLock() { return particlesLock; }
 
 private:
 
+    bool breakCpuMode = false;
     int maxSpawnPoints = 8;
     int maxMassPoints = 4;
+    int maxParticles = 8;
     juce::OwnedArray<SpawnPoint> spawnPoints;
     juce::OwnedArray<MassPoint> massPoints;
     juce::OwnedArray<Particle> particles;
@@ -82,6 +88,9 @@ private:
     // Helper functions
     bool isMouseNearArrowTip (SpawnPoint* spawn, const juce::Point<float>& mousePos) const;
     juce::Point<float> getSpawnPointCenter (SpawnPoint* spawn) const;
+    
+    // Custom popup menu look and feel
+    CustomPopupMenuLookAndFeel popupMenuLookAndFeel;
     
     // Thread safety for particle access
     juce::CriticalSection particlesLock;

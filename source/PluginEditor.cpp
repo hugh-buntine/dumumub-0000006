@@ -82,6 +82,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (breakCpuButton);
     breakCpuButton.setImages (breakCpuButtonUnpressed, breakCpuButtonUnpressedHover,
                              breakCpuButtonPressed, breakCpuButtonPressedHover);
+    breakCpuButton.onClick = [this]() {
+        // Update canvas limits based on button state
+        canvas.setBreakCpuMode (breakCpuButton.getToggleState());
+    };
     
     // Load and set star image for particles
     auto starImage = juce::ImageCache::getFromMemory (BinaryData::STAR_png, 

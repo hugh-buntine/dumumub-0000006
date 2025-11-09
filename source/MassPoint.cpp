@@ -150,13 +150,14 @@ void MassPoint::mouseDown (const juce::MouseEvent& event)
 void MassPoint::showSizeMenu()
 {
     juce::PopupMenu menu;
+    menu.setLookAndFeel (&popupMenuLookAndFeel);
     
-    menu.addItem (1, "50x50 (Smallest)", true, radius == 50);
-    menu.addItem (2, "100x100 (Medium)", true, radius == 100);
-    menu.addItem (3, "150x150 (Large)", true, radius == 150);
-    menu.addItem (4, "200x200 (Largest)", true, radius == 200);
+    menu.addItem (1, "small", true, radius == 50);
+    menu.addItem (2, "medium", true, radius == 100);
+    menu.addItem (3, "large", true, radius == 150);
+    menu.addItem (4, "massive", true, radius == 200);
     menu.addSeparator();
-    menu.addItem (5, "Delete Mass Point", true);
+    menu.addItem (5, "delete", true);
     
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this] (int result)

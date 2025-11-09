@@ -143,12 +143,13 @@ void SpawnPoint::mouseDown (const juce::MouseEvent& event)
 void SpawnPoint::showMenu()
 {
     juce::PopupMenu menu;
+    menu.setLookAndFeel (&popupMenuLookAndFeel);
     
     // Check if we can delete (need at least 1 spawn point)
     int spawnPointCount = getSpawnPointCount ? getSpawnPointCount() : 1;
     bool canDelete = spawnPointCount > 1;
     
-    menu.addItem (1, "Delete Spawn Point", canDelete);
+    menu.addItem (1, "delete", canDelete);
     
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this, canDelete] (int result)

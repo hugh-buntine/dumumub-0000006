@@ -28,6 +28,29 @@ Canvas::~Canvas()
 }
 
 //==============================================================================
+void Canvas::setBreakCpuMode (bool enabled)
+{
+    breakCpuMode = enabled;
+    
+    if (enabled)
+    {
+        // Unlimited mode
+        maxSpawnPoints = std::numeric_limits<int>::max();
+        maxMassPoints = std::numeric_limits<int>::max();
+        maxParticles = std::numeric_limits<int>::max();
+        LOG_INFO("Break CPU mode enabled - unlimited particles/masses/spawn points");
+    }
+    else
+    {
+        // Normal limits
+        maxSpawnPoints = 8;
+        maxMassPoints = 4;
+        maxParticles = 8;
+        LOG_INFO("Break CPU mode disabled - limited to 4 masses, 8 spawn points, 8 particles");
+    }
+}
+
+//==============================================================================
 void Canvas::paint (juce::Graphics& g)
 {
     // Make canvas transparent so the background image shows through
@@ -300,21 +323,25 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
     if (event.mods.isPopupMenu())
     {
         juce::PopupMenu menu;
+        menu.setLookAndFeel (&popupMenuLookAndFeel);
         
-        // Check limits: max 4 mass points, max 8 spawn points
-        bool canAddMass = massPoints.size() < 4;
-        bool canAddSpawn = spawnPoints.size() < 8;
+        // Check limits based on break CPU mode
+        bool canAddMass = breakCpuMode || massPoints.size() < maxMassPoints;
+        bool canAddSpawn = breakCpuMode || spawnPoints.size() < maxSpawnPoints;
         
-        // Add menu items (greyed out if at limit)
-        menu.addItem (1, "Add Mass Point", canAddMass);
-        menu.addItem (2, "Add Spawn Point", canAddSpawn);
+        // Add menu items (greyed out if at limit and not in break CPU mode)
+        menu.addItem (1, "mass", canAddMass);
+        menu.addItem (2, "emitter", canAddSpawn);
         
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (
-                           juce::Rectangle<int> (event.getScreenPosition().x, 
-                                                event.getScreenPosition().y, 1, 1)),
+        auto options = juce::PopupMenu::Options()
+            .withTargetScreenArea (juce::Rectangle<int> (event.getScreenPosition().x, 
+                                                         event.getScreenPosition().y, 1, 1))
+            .withParentComponent (this);
+        
+        menu.showMenuAsync (options,
                            [this, mousePos] (int result)
                            {
-                               if (result == 1 && massPoints.size() < 4)
+                               if (result == 1 && (breakCpuMode || massPoints.size() < maxMassPoints))
                                {
                                    // Add mass point at mouse position
                                    auto* mass = new MassPoint();
@@ -330,7 +357,7 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                                    massPoints.add (mass);
                                    LOG_INFO("Added mass point at (" + juce::String(mousePos.x) + ", " + juce::String(mousePos.y) + ") - Total: " + juce::String(massPoints.size()));
                                }
-                               else if (result == 2 && spawnPoints.size() < 8)
+                               else if (result == 2 && (breakCpuMode || spawnPoints.size() < maxSpawnPoints))
                                {
                                    // Add spawn point at mouse position
                                    auto* spawn = new SpawnPoint();
@@ -472,8 +499,7 @@ void Canvas::spawnParticle()
     // Lock particles for thread safety
     const juce::ScopedLock lock (particlesLock);
     
-    // Check if we need to remove the oldest particle (max 32 particles)
-    const int maxParticles = 32;
+    // Check if we need to remove the oldest particle
     if (particles.size() >= maxParticles)
     {
         // Remove the oldest particle (index 0)
@@ -514,8 +540,7 @@ void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
     // Lock particles for thread safety
     const juce::ScopedLock lock (particlesLock);
     
-    // Check if we need to remove the oldest particle (max 32 particles)
-    const int maxParticles = 32;
+    // Check if we need to remove the oldest particle
     if (particles.size() >= maxParticles)
     {
         // Remove the oldest particle (index 0)
