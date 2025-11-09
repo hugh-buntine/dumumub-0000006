@@ -49,6 +49,9 @@ public:
     // Canvas reference for particle access
     void setCanvas (Canvas* canvasPtr) { canvas = canvasPtr; }
     
+    // MIDI event injection (for UI-triggered notes)
+    void injectMidiMessage (const juce::MidiMessage& message);
+    
     // Parameter access
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
 
@@ -66,4 +69,8 @@ private:
     
     // Canvas reference (not owned)
     Canvas* canvas = nullptr;
+    
+    // Pending MIDI messages from UI
+    juce::MidiBuffer pendingMidiMessages;
+    juce::CriticalSection midiLock;
 };

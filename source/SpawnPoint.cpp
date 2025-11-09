@@ -42,8 +42,15 @@ void SpawnPoint::setSpawnerHoverImages (const juce::Image& img1Hover, const juce
 
 void SpawnPoint::setSelected (bool shouldBeSelected)
 {
-    selected = shouldBeSelected;
-    repaint();
+    if (selected != shouldBeSelected)
+    {
+        selected = shouldBeSelected;
+        repaint();
+        
+        // Notify parent that selection changed (so arrow can be drawn/hidden)
+        if (onSelectionChanged)
+            onSelectionChanged();
+    }
 }
 
 void SpawnPoint::updateRotation (float deltaTime)
@@ -137,12 +144,16 @@ void SpawnPoint::showMenu()
 {
     juce::PopupMenu menu;
     
-    menu.addItem (1, "Delete");
+    // Check if we can delete (need at least 1 spawn point)
+    int spawnPointCount = getSpawnPointCount ? getSpawnPointCount() : 1;
+    bool canDelete = spawnPointCount > 1;
+    
+    menu.addItem (1, "Delete Spawn Point", canDelete);
     
     menu.showMenuAsync (juce::PopupMenu::Options(),
-                        [this] (int result)
+                        [this, canDelete] (int result)
                         {
-                            if (result == 1) // Delete
+                            if (result == 1 && canDelete) // Delete
                             {
                                 if (onDeleteRequested)
                                     onDeleteRequested();

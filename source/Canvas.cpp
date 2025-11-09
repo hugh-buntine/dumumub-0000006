@@ -78,6 +78,13 @@ void Canvas::newMassPoint()
             LOG_INFO("Mass dropped - repainting gravity waves");
         };
         
+        // Set callback for delete request
+        newMass->onDeleteRequested = [this, newMass]() {
+            massPoints.removeObject (newMass);
+            repaint();
+            LOG_INFO("Deleted mass point");
+        };
+        
         // Place at random position on canvas
         if (getWidth() > 0 && getHeight() > 0)
         {
@@ -114,11 +121,21 @@ void Canvas::newSpawnPoint()
             repaint();
         };
         
+        // Set callback to repaint when selection changes (so arrow appears/disappears)
+        newPoint->onSelectionChanged = [this]() {
+            repaint();
+        };
+        
         // Set callback for delete request
         newPoint->onDeleteRequested = [this, newPoint]() {
             spawnPoints.removeObject (newPoint);
             repaint();
             LOG_INFO("Deleted spawn point");
+        };
+        
+        // Set callback to get spawn point count (for menu state)
+        newPoint->getSpawnPointCount = [this]() {
+            return spawnPoints.size();
         };
         
         // Place at random position on canvas
@@ -224,8 +241,6 @@ void Canvas::drawGravityWaves (juce::Graphics& g)
 
 void Canvas::drawMomentumArrows (juce::Graphics& g)
 {
-    g.setColour (juce::Colours::red);
-    
     for (auto* spawn : spawnPoints)
     {
         // Only draw arrow for selected spawn points
@@ -236,12 +251,27 @@ void Canvas::drawMomentumArrows (juce::Graphics& g)
         juce::Point<float> momentumVector = spawn->getMomentumVector();
         juce::Point<float> arrowEnd = center + momentumVector;
         
-        // Draw arrow line
-        g.drawLine (center.x, center.y, arrowEnd.x, arrowEnd.y, 2.0f);
-        
-        // Draw arrowhead
+        // Draw arrow line with gradient from transparent to opaque
         if (momentumVector.getDistanceFromOrigin() > 2.0f)
         {
+            // Draw multiple segments with increasing opacity
+            const int numSegments = 20;
+            for (int i = 0; i < numSegments; ++i)
+            {
+                float t1 = (float)i / numSegments;
+                float t2 = (float)(i + 1) / numSegments;
+                
+                juce::Point<float> p1 = center + momentumVector * t1;
+                juce::Point<float> p2 = center + momentumVector * t2;
+                
+                // Fade from 0% to 100% opacity
+                float alpha = (t1 + t2) / 2.0f; // Use midpoint opacity for this segment
+                g.setColour (juce::Colours::red.withAlpha (alpha));
+                g.drawLine (p1.x, p1.y, p2.x, p2.y, 2.0f);
+            }
+            
+            // Draw arrowhead fully opaque
+            g.setColour (juce::Colours::red);
             float angle = std::atan2 (momentumVector.y, momentumVector.x);
             float arrowHeadSize = 5.0f;
             
@@ -266,6 +296,63 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
 {
     juce::Point<float> mousePos = event.position;
     
+    // Right-click shows context menu to add mass or spawn point
+    if (event.mods.isPopupMenu())
+    {
+        juce::PopupMenu menu;
+        
+        // Check limits: max 4 mass points, max 8 spawn points
+        bool canAddMass = massPoints.size() < 4;
+        bool canAddSpawn = spawnPoints.size() < 8;
+        
+        // Add menu items (greyed out if at limit)
+        menu.addItem (1, "Add Mass Point", canAddMass);
+        menu.addItem (2, "Add Spawn Point", canAddSpawn);
+        
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (
+                           juce::Rectangle<int> (event.getScreenPosition().x, 
+                                                event.getScreenPosition().y, 1, 1)),
+                           [this, mousePos] (int result)
+                           {
+                               if (result == 1 && massPoints.size() < 4)
+                               {
+                                   // Add mass point at mouse position
+                                   auto* mass = new MassPoint();
+                                   addAndMakeVisible (mass);
+                                   mass->setCentrePosition (mousePos.toInt());
+                                   mass->onMassDropped = [this]() { repaint(); };
+                                   mass->onMassMoved = [this]() { repaint(); };
+                                   mass->onDeleteRequested = [this, mass]() {
+                                       massPoints.removeObject (mass);
+                                       repaint();
+                                       LOG_INFO("Deleted mass point");
+                                   };
+                                   massPoints.add (mass);
+                                   LOG_INFO("Added mass point at (" + juce::String(mousePos.x) + ", " + juce::String(mousePos.y) + ") - Total: " + juce::String(massPoints.size()));
+                               }
+                               else if (result == 2 && spawnPoints.size() < 8)
+                               {
+                                   // Add spawn point at mouse position
+                                   auto* spawn = new SpawnPoint();
+                                   addAndMakeVisible (spawn);
+                                   spawn->setCentrePosition (mousePos.toInt());
+                                   spawn->onSpawnPointMoved = [this]() { repaint(); };
+                                   spawn->onSelectionChanged = [this]() { repaint(); };
+                                   spawn->onDeleteRequested = [this, spawn]() {
+                                       spawnPoints.removeObject (spawn);
+                                       repaint();
+                                       LOG_INFO("Deleted spawn point");
+                                   };
+                                   spawn->getSpawnPointCount = [this]() {
+                                       return spawnPoints.size();
+                                   };
+                                   spawnPoints.add (spawn);
+                                   LOG_INFO("Added spawn point at (" + juce::String(mousePos.x) + ", " + juce::String(mousePos.y) + ") - Total: " + juce::String(spawnPoints.size()));
+                               }
+                           });
+        return;
+    }
+    
     // Check if clicking near any arrow tip (only for selected spawn points)
     for (auto* spawn : spawnPoints)
     {
@@ -278,10 +365,36 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
         }
     }
     
-    // If not clicking on arrow or spawn point, deselect all spawn points
+    // Check if clicking on a spawn point or mass point
+    bool clickedOnComponent = false;
     for (auto* spawn : spawnPoints)
     {
-        spawn->setSelected (false);
+        if (spawn->getBounds().contains (mousePos.toInt()))
+        {
+            clickedOnComponent = true;
+            break;
+        }
+    }
+    if (!clickedOnComponent)
+    {
+        for (auto* mass : massPoints)
+        {
+            if (mass->getBounds().contains (mousePos.toInt()))
+            {
+                clickedOnComponent = true;
+                break;
+            }
+        }
+    }
+    
+    // If clicking on empty canvas (not on any component), deselect all spawn points
+    if (!clickedOnComponent)
+    {
+        for (auto* spawn : spawnPoints)
+        {
+            spawn->setSelected (false);
+        }
+        repaint(); // Force repaint to hide arrows immediately
     }
     
     // If not clicking on arrow, allow spawn points to handle their own dragging

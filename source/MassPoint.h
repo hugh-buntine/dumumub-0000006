@@ -25,6 +25,7 @@ public:
     // Callback for when mass point is moved or dropped
     std::function<void()> onMassDropped;
     std::function<void()> onMassMoved;
+    std::function<void()> onDeleteRequested;
     
     // Size/Mass controls
     float getMassMultiplier() const { return massMultiplier; }
@@ -60,8 +61,8 @@ private:
     juce::ComponentBoundsConstrainer constrainer;
     
     // Size states for double-click cycling (4 sizes: 50, 100, 150, 200)
-    int radius = 50;
-    float massMultiplier = 1.0f;
+    int radius = 200; // Start at biggest size
+    float massMultiplier = 4.0f; // Match the biggest size (200/50 = 4.0)
     static constexpr int minRadius = 50;
     static constexpr int maxRadius = 200;
     static constexpr int radiusStep = 50;

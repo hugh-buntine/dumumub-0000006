@@ -35,8 +35,14 @@ public:
     // Callback for when spawn point is moved
     std::function<void()> onSpawnPointMoved;
     
+    // Callback for when selection state changes
+    std::function<void()> onSelectionChanged;
+    
     // Callback for when delete is requested
     std::function<void()> onDeleteRequested;
+    
+    // Callback to get the total number of spawn points (for menu state)
+    std::function<int()> getSpawnPointCount;
     
     // Set the spawner images for all spawn points to use
     static void setSpawnerImages (const juce::Image& img1, const juce::Image& img2);

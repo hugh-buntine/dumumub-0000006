@@ -155,12 +155,22 @@ void MassPoint::showSizeMenu()
     menu.addItem (2, "100x100 (Medium)", true, radius == 100);
     menu.addItem (3, "150x150 (Large)", true, radius == 150);
     menu.addItem (4, "200x200 (Largest)", true, radius == 200);
+    menu.addSeparator();
+    menu.addItem (5, "Delete Mass Point", true);
     
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this] (int result)
                         {
                             if (result == 0)
                                 return; // User cancelled
+                            
+                            if (result == 5)
+                            {
+                                // Delete request
+                                if (onDeleteRequested)
+                                    onDeleteRequested();
+                                return;
+                            }
                             
                             int newRadius = 50;
                             switch (result)
@@ -203,11 +213,17 @@ void MassPoint::setRadius (int newRadius)
 
 void MassPoint::mouseDrag (const juce::MouseEvent& event)
 {
-    // Constrain dragging to parent component bounds if parent exists
+    // Constrain dragging so that the CENTER stays within parent bounds
+    // (Allow the mass point to extend beyond edges as long as center is inside)
     if (getParentComponent() != nullptr)
     {
-        constrainer.setMinimumOnscreenAmounts (getHeight(), getWidth(), 
-                                               getHeight(), getWidth());
+        // Set minimum onscreen amounts to allow center to be at edges
+        // This means the mass can extend beyond the bounds
+        int halfWidth = getWidth() / 2;
+        int halfHeight = getHeight() / 2;
+        
+        constrainer.setMinimumOnscreenAmounts (halfHeight, halfWidth, 
+                                               halfHeight, halfWidth);
     }
     
     // Perform the drag

@@ -216,6 +216,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     for (auto i = 0; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    // Merge in any pending MIDI messages from UI thread
+    {
+        const juce::ScopedLock lock (midiLock);
+        if (!pendingMidiMessages.isEmpty())
+        {
+            midiMessages.addEvents (pendingMidiMessages, 0, buffer.getNumSamples(), 0);
+            pendingMidiMessages.clear();
+        }
+    }
+
     // Process MIDI messages to spawn particles
     if (canvas != nullptr)
     {
@@ -368,6 +378,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
     }
+}
+
+void PluginProcessor::injectMidiMessage (const juce::MidiMessage& message)
+{
+    const juce::ScopedLock lock (midiLock);
+    pendingMidiMessages.addEvent (message, 0);
 }
 
 //==============================================================================

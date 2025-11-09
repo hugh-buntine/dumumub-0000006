@@ -168,27 +168,34 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     audioFileLabel.setColour (juce::Label::textColourId, juce::Colours::transparentBlack);
     audioFileLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     
-    // Setup particle count label
+    // Setup particle count label (will be drawn manually in paintOverChildren)
     addAndMakeVisible (particleCountLabel);
     particleCountLabel.setFont (juce::FontOptions (14.0f));
     particleCountLabel.setJustificationType (juce::Justification::centredLeft);
-    particleCountLabel.setText ("Particles: 0", juce::dontSendNotification);
-    particleCountLabel.setColour (juce::Label::textColourId, juce::Colours::black);
+    particleCountLabel.setText ("0", juce::dontSendNotification);
+    // Make label text transparent so we can draw it ourselves in paintOverChildren
+    particleCountLabel.setColour (juce::Label::textColourId, juce::Colours::transparentBlack);
+    particleCountLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     
     // Start timer to update particle count (10 Hz)
     startTimer (100);
     
-    // Setup add spawn point button
-    addAndMakeVisible (addSpawnPointButton);
-    addSpawnPointButton.onClick = [this]() { canvas.newSpawnPoint(); };
+    // Setup MIDI trigger button (C3 = MIDI note 60)
+    addAndMakeVisible (midiTriggerButton);
     
-    // Setup add mass point button
-    addAndMakeVisible (addMassPointButton);
-    addMassPointButton.onClick = [this]() { canvas.newMassPoint(); };
+    // Send note on when button is pressed
+    midiTriggerButton.onNoteOn = [this]() {
+        // Trigger C3 (MIDI note 60) with velocity 100
+        auto midiMessage = juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100);
+        processorRef.injectMidiMessage (midiMessage);
+    };
     
-    // Setup emit particle button
-    addAndMakeVisible (emitParticleButton);
-    emitParticleButton.onClick = [this]() { canvas.spawnParticle(); };
+    // Send note off when button is released
+    midiTriggerButton.onNoteOff = [this]() {
+        // Note off for C3 (MIDI note 60)
+        auto midiMessage = juce::MidiMessage::noteOff (1, 60, (juce::uint8) 0);
+        processorRef.injectMidiMessage (midiMessage);
+    };
     
     // Setup parameter sliders
     auto& apvts = processorRef.getAPVTS();
@@ -270,7 +277,7 @@ void PluginEditor::timerCallback()
     if (particles != nullptr)
     {
         int count = particles->size();
-        particleCountLabel.setText ("Particles: " + juce::String(count), juce::dontSendNotification);
+        particleCountLabel.setText (juce::String(count), juce::dontSendNotification);
     }
 }
 
@@ -371,6 +378,25 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
                        juce::Justification::centred, true);
         }
     }
+    
+    // Draw particle count in bottom right corner of canvas
+    // Canvas is at (50, 125) with size 400x400, so bottom right is at (450, 525)
+    if (customTypeface != nullptr)
+    {
+        auto text = particleCountLabel.getText(); // Just the number
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.25f)); // #FFFFF2 at 25% opacity, same as filename
+        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (16.0f)); // Bigger font (was 12.0f)
+        g.setFont (font);
+        
+        // Position text in bottom right corner of canvas with more padding (further up and more left)
+        auto canvasBounds = canvas.getBounds(); // Get canvas bounds
+        auto textWidth = font.getStringWidthFloat (text);
+        auto textX = canvasBounds.getRight() - textWidth - 20.0f; // 20px padding from right (was 10px)
+        auto textY = canvasBounds.getBottom() - 40.0f; // 40px from bottom (higher than before)
+        
+        g.drawText (text, juce::Rectangle<float>(textX, textY, textWidth, 20.0f), 
+                   juce::Justification::centredRight, true);
+    }
 }
 
 void PluginEditor::resized()
@@ -378,19 +404,17 @@ void PluginEditor::resized()
     // layout the positions of your child components here
     inspectButton.setBounds (getWidth() - 50, getHeight() - 50, 50, 50);
     
+    // MIDI Trigger button at top center
+    midiTriggerButton.setBounds (180, 10, 140, 30);
+    
     // Canvas - positioned at (50, 125) with 400x400 size
     canvas.setBounds (50, 125, 400, 400);
     
     // Audio file label at top of canvas (inside canvas area)
     audioFileLabel.setBounds (50, 130, 400, 25); // 5px from top of canvas
     
-    // Particle count label at top right
-    particleCountLabel.setBounds (360, 10, 90, 30);
-    
-    // Buttons below canvas
-    addSpawnPointButton.setBounds (50, 460, 100, 30);
-    addMassPointButton.setBounds (170, 460, 100, 30);
-    emitParticleButton.setBounds (290, 460, 120, 30);
+    // Particle count label (invisible, just holds the text) - positioned at bottom right of canvas
+    particleCountLabel.setBounds (canvas.getRight() - 60, canvas.getBottom() - 25, 50, 20);
     
     // Horizontal sliders in slider cases area (40, 560, 415x185)
     // 2 columns, 3 rows, each slider 200x50
