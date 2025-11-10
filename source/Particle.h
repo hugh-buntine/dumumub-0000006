@@ -5,6 +5,16 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 //==============================================================================
+// ADSR envelope phases for particle lifetime control
+enum class ADSRPhase
+{
+    Attack,     // Fading in from 0 to 1
+    Held,       // MIDI key is held, amplitude stays at 1
+    Release,    // MIDI key released, fading from 1 to 0
+    Finished    // Release complete, particle should be removed
+};
+
+//==============================================================================
 // Single grain instance
 struct Grain
 {
@@ -20,7 +30,8 @@ class Particle
 {
 public:
     Particle (juce::Point<float> position, juce::Point<float> velocity, 
-              const juce::Rectangle<float>& canvasBounds, float maxLifeTime = 30.0f,
+              const juce::Rectangle<float>& canvasBounds, int midiNoteNumber,
+              float attackTime, float releaseTime,
               float initialVelocity = 1.0f, float pitchShift = 1.0f);
     ~Particle();
 
@@ -33,7 +44,13 @@ public:
     juce::Point<float> getPosition() const { return position; }
     juce::Point<float> getVelocity() const { return velocity; }
     float getLifeTime() const { return lifeTime; }
-    bool isDead() const { return lifeTime > maxLifeTime; }
+    bool isFinished() const { return adsrPhase == ADSRPhase::Finished; }
+    int getMidiNoteNumber() const { return midiNoteNumber; }
+    
+    // ADSR control
+    void updateADSR (float deltaTime);
+    void triggerRelease();
+    float getADSRAmplitude() const { return adsrAmplitude; }
     
     // Audio grain getters
     float getGrainSizeMs() const { return grainSizeMs; }
@@ -72,8 +89,7 @@ public:
     };
     EdgeCrossfade getEdgeCrossfade() const;
     
-    float getGrainAmplitude (const Grain& grain) const; // 0.0 to 1.0 based on envelope
-    float getLifetimeAmplitude() const; // 0.0 to 1.0 based on age (fades as particle dies)
+    float getGrainAmplitude (const Grain& grain) const; // Grain envelope with hardcoded 50% crossfade
     float getPitchShift() const { return pitchShift; } // Pitch shift multiplier for grain playback
     float getInitialVelocityMultiplier() const { return initialVelocityMultiplier; } // MIDI velocity (0.0 to 1.0)
     
@@ -94,8 +110,15 @@ private:
     juce::Point<float> velocity;
     juce::Point<float> acceleration;
     float lifeTime = 0.0f;
-    float maxLifeTime = 30.0f; // 30 seconds before particle dies
     float radius = 3.0f;
+    
+    // ADSR envelope for particle lifetime
+    int midiNoteNumber = -1;           // Which MIDI note spawned this particle
+    ADSRPhase adsrPhase = ADSRPhase::Attack;
+    float adsrTime = 0.0f;             // Time spent in current ADSR phase
+    float attackTime = 0.01f;          // Attack duration in seconds
+    float releaseTime = 0.5f;          // Release duration in seconds
+    float adsrAmplitude = 0.0f;        // Current envelope amplitude (0.0-1.0)
     
     // MIDI parameters
     float initialVelocityMultiplier = 1.0f; // MIDI velocity mapped to 0.0-1.0
@@ -118,8 +141,8 @@ private:
     
     // Grain audio parameters
     float grainSizeMs = 50.0f;      // Grain duration in milliseconds
-    float attackPercent = 20.0f;    // Attack envelope as % of first half
-    float releasePercent = 20.0f;   // Release envelope as % of second half
+    // Note: Grain attack/release are now HARDCODED to 50% crossfade (not parameters)
+    // Particle-level attack/release control overall ADSR envelope instead
     
     // Grain triggering based on frequency
     int samplesSinceLastGrainTrigger = 0;

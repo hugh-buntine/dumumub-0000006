@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <map>
 #include "Particle.h"
 
 #if (MSVC)
@@ -86,9 +87,10 @@ public:
     void removeSpawnPoint (int index);
     const std::vector<SpawnPointData>& getSpawnPoints() const { return spawnPoints; }
     
-    // Particle spawning (called from GUI or MIDI)
+    // Particle spawning (called from GUI or MIDI) - now requires MIDI note and ADSR times
     void spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
-                       float initialVelocity, float pitchShift);
+                       float initialVelocity, float pitchShift, int midiNoteNumber,
+                       float attackTime, float releaseTime);
     
     // Gravity and canvas settings
     void setGravityStrength (float strength) { gravityStrength = strength; }
@@ -120,17 +122,24 @@ private:
     juce::OwnedArray<Particle> particles;
     juce::CriticalSection particlesLock; // Protects particle array
     
+    // MIDI note to particle mapping for ADSR control
+    std::map<int, std::vector<int>> activeNoteToParticles; // Maps MIDI note number -> particle indices
+    
     std::vector<MassPointData> massPoints;
     std::vector<SpawnPointData> spawnPoints;
     
     // Simulation parameters
     float gravityStrength = 100.0f;
     juce::Rectangle<float> canvasBounds {0, 0, 800, 600};
-    float particleLifespan = 30.0f;
+    float particleLifespan = 30.0f; // Legacy parameter - no longer used with ADSR
     int maxParticles = 8; // Default limit (can be changed via setMaxParticles)
     
     // Timing for particle updates
     double lastUpdateTime = 0.0;
+    
+    // MIDI note handling helpers
+    void handleNoteOn (int noteNumber, float velocity, float pitchShift);
+    void handleNoteOff (int noteNumber);
     
     // Helper method to update particle physics
     void updateParticleSimulation (double currentTime, int bufferSize);

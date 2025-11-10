@@ -6,13 +6,20 @@ juce::Image Particle::starImage;
 
 //==============================================================================
 Particle::Particle (juce::Point<float> position, juce::Point<float> velocity, 
-                    const juce::Rectangle<float>& canvasBounds, float maxLifeTime,
+                    const juce::Rectangle<float>& canvasBounds, int midiNoteNumber,
+                    float attackTime, float releaseTime,
                     float initialVelocity, float pitchShift)
     : position (position), velocity (velocity), canvasBounds (canvasBounds),
-      lifeTime (0.0f), maxLifeTime (maxLifeTime), 
+      lifeTime (0.0f), 
+      midiNoteNumber (midiNoteNumber),
+      adsrPhase (ADSRPhase::Attack),
+      adsrTime (0.0f),
+      attackTime (attackTime),
+      releaseTime (releaseTime),
+      adsrAmplitude (0.0f),
       initialVelocityMultiplier (initialVelocity), pitchShift (pitchShift),
       currentSampleRate (0.0), samplesSinceLastGrainTrigger (0),
-      cachedTotalGrainSamples (2205), cachedAttackSamples (220), cachedReleaseSamples (220)
+      cachedTotalGrainSamples (2205)
 {
     // Reserve space for grains to avoid allocations during audio processing
     // With 100Hz grain frequency, we might have ~20 overlapping grains at most
@@ -56,8 +63,68 @@ Particle::~Particle()
 }
 
 //==============================================================================
+void Particle::updateADSR (float deltaTime)
+{
+    adsrTime += deltaTime;
+    
+    switch (adsrPhase)
+    {
+        case ADSRPhase::Attack:
+            // Linear ramp from 0.0 to 1.0 over attackTime
+            if (attackTime > 0.0f)
+                adsrAmplitude = juce::jmin (1.0f, adsrTime / attackTime);
+            else
+                adsrAmplitude = 1.0f; // Instant attack
+            
+            // Move to Held phase when attack complete
+            if (adsrAmplitude >= 1.0f)
+            {
+                adsrPhase = ADSRPhase::Held;
+                adsrTime = 0.0f;
+            }
+            break;
+            
+        case ADSRPhase::Held:
+            // Stay at full amplitude while MIDI key is held
+            adsrAmplitude = 1.0f;
+            break;
+            
+        case ADSRPhase::Release:
+            // Linear ramp from 1.0 to 0.0 over releaseTime
+            if (releaseTime > 0.0f)
+                adsrAmplitude = juce::jmax (0.0f, 1.0f - (adsrTime / releaseTime));
+            else
+                adsrAmplitude = 0.0f; // Instant release
+            
+            // Move to Finished phase when release complete
+            if (adsrAmplitude <= 0.0f)
+            {
+                adsrPhase = ADSRPhase::Finished;
+            }
+            break;
+            
+        case ADSRPhase::Finished:
+            adsrAmplitude = 0.0f;
+            break;
+    }
+}
+
+void Particle::triggerRelease()
+{
+    // Transition from Held to Release phase
+    if (adsrPhase == ADSRPhase::Attack || adsrPhase == ADSRPhase::Held)
+    {
+        adsrPhase = ADSRPhase::Release;
+        adsrTime = 0.0f;
+    }
+}
+
+//==============================================================================
 void Particle::update (float deltaTime)
 {
+    // Update ADSR envelope
+    updateADSR (deltaTime);
+    
     // Add current position to trail
     if (trail.empty() || position.getDistanceFrom(trail.back().position) > 2.0f)
     {
@@ -117,8 +184,8 @@ void Particle::wrapAround (const juce::Rectangle<float>& bounds)
 
 void Particle::draw (juce::Graphics& g)
 {
-    // Calculate base alpha from lifetime (particle fades as it dies)
-    float lifetimeAlpha = juce::jmax (0.0f, 1.0f - (lifeTime / maxLifeTime));
+    // Calculate base alpha from ADSR amplitude
+    float lifetimeAlpha = adsrAmplitude;
     
     // Get edge crossfade info (for visual wraparound)
     const float edgeFadeZone = 50.0f;
@@ -235,10 +302,10 @@ void Particle::updateSampleRate (double sampleRate)
         // Recalculate all sample-based values
         cachedTotalGrainSamples = static_cast<int>((grainSizeMs / 1000.0f) * sampleRate);
         
-        // Calculate attack/release samples as percentage of half grain
+        // Hardcoded 50% crossfade: attack/release samples are each half the grain
         int halfGrainSamples = cachedTotalGrainSamples / 2;
-        cachedAttackSamples = static_cast<int>((attackPercent / 100.0f) * halfGrainSamples);
-        cachedReleaseSamples = static_cast<int>((releasePercent / 100.0f) * halfGrainSamples);
+        cachedAttackSamples = halfGrainSamples;  // 50% of grain
+        cachedReleaseSamples = halfGrainSamples; // 50% of grain
         
         // Logging disabled in audio thread to prevent dropouts
         // LOG_INFO("Particle sample rate updated: " + juce::String(sampleRate) + " Hz, " +
@@ -248,20 +315,16 @@ void Particle::updateSampleRate (double sampleRate)
 
 void Particle::setGrainParameters (float grainSizeMsNew, float attackPercentNew, float releasePercentNew)
 {
-    // Only update if values changed
-    if (grainSizeMs != grainSizeMsNew || attackPercent != attackPercentNew || releasePercent != releasePercentNew)
+    // Note: attack/release parameters are now ignored - grain crossfade is hardcoded to 50%
+    // These parameters are kept for API compatibility but only grain size is used
+    
+    // Only update if grain size changed
+    if (grainSizeMs != grainSizeMsNew)
     {
         grainSizeMs = grainSizeMsNew;
-        attackPercent = attackPercentNew;
-        releasePercent = releasePercentNew;
         
-        // Recalculate cached values
+        // Recalculate cached grain size in samples
         cachedTotalGrainSamples = static_cast<int>((grainSizeMs / 1000.0f) * currentSampleRate);
-        
-        // Calculate attack/release samples as percentage of half grain
-        int halfGrainSamples = cachedTotalGrainSamples / 2;
-        cachedAttackSamples = static_cast<int>((attackPercent / 100.0f) * halfGrainSamples);
-        cachedReleaseSamples = static_cast<int>((releasePercent / 100.0f) * halfGrainSamples);
     }
 }
 
@@ -341,58 +404,30 @@ Particle::EdgeCrossfade Particle::getEdgeCrossfade() const
 
 float Particle::getGrainAmplitude (const Grain& grain) const
 {
+    // HARDCODED 50% crossfade for all grains:
+    // - First 50% of grain: fade in from 0.0 to 1.0
+    // - Last 50% of grain: fade out from 1.0 to 0.0
+    
     int grainPos = grain.playbackPosition;
     int halfGrain = cachedTotalGrainSamples / 2;
     
-    // First half of grain - attack phase
+    float grainEnvelope;
+    
     if (grainPos < halfGrain)
     {
-        // Attack fades in during the first cachedAttackSamples of the first half
-        if (grainPos < cachedAttackSamples)
-        {
-            return static_cast<float>(grainPos) / cachedAttackSamples;
-        }
-        // Rest of first half is full volume
-        return 1.0f;
+        // First half: fade in from 0.0 to 1.0
+        grainEnvelope = static_cast<float>(grainPos) / static_cast<float>(halfGrain);
     }
-    
-    // Second half of grain - release phase
     else
     {
+        // Second half: fade out from 1.0 to 0.0
         int posInSecondHalf = grainPos - halfGrain;
         int secondHalfDuration = cachedTotalGrainSamples - halfGrain;
-        
-        // Sustain at full volume for beginning of second half
-        if (posInSecondHalf < secondHalfDuration - cachedReleaseSamples)
-        {
-            return 1.0f;
-        }
-        
-        // Release fades out during the last cachedReleaseSamples of the second half
-        int samplesFromEnd = secondHalfDuration - posInSecondHalf;
-        return static_cast<float>(samplesFromEnd) / cachedReleaseSamples;
-    }
-}
-
-float Particle::getLifetimeAmplitude() const
-{
-    // Fade out over the last 5 seconds of life using logarithmic curve
-    float fadeOutTime = 5.0f; // seconds
-    
-    if (maxLifeTime - lifeTime < fadeOutTime)
-    {
-        // Fading out - use logarithmic curve for perceptual linearity
-        float fadeProgress = (maxLifeTime - lifeTime) / fadeOutTime; // 1.0 to 0.0
-        
-        // Convert to dB scale: 0dB at full life, -60dB at death
-        float fadeDb = fadeProgress * 60.0f - 60.0f; // -60 to 0 dB
-        float fadeLinear = juce::Decibels::decibelsToGain (fadeDb);
-        
-        return juce::jmax (0.0f, fadeLinear);
+        grainEnvelope = 1.0f - (static_cast<float>(posInSecondHalf) / static_cast<float>(secondHalfDuration));
     }
     
-    // Full volume for most of life
-    return 1.0f;
+    // Apply particle ADSR amplitude on top of grain envelope
+    return grainEnvelope * adsrAmplitude;
 }
 
 int Particle::calculateGrainStartPosition (int bufferLength)

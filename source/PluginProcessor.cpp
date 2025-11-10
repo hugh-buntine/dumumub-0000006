@@ -40,59 +40,69 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     
-    // Grain Size (5ms - 500ms)
+    // Grain Size (10ms - 500ms, increased minimum)
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "grainSize",
         "Grain Size",
-        juce::NormalisableRange<float> (5.0f, 500.0f, 1.0f, 0.5f),
+        juce::NormalisableRange<float> (10.0f, 500.0f, 1.0f, 0.5f),
         50.0f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
         [](float value, int) { return juce::String (value, 1) + " ms"; }
     ));
     
-    // Grain Frequency (1 - 100 Hz)
+    // Grain Frequency (5 - 50 Hz, narrower range)
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "grainFreq",
         "Grain Frequency",
-        juce::NormalisableRange<float> (1.0f, 100.0f, 0.1f, 0.4f),
-        30.0f,
+        juce::NormalisableRange<float> (5.0f, 50.0f, 0.1f, 0.4f),
+        20.0f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
         [](float value, int) { return juce::String (value, 1) + " Hz"; }
     ));
     
-    // Attack Time (0% - 100%)
+    // Attack Time (0.001s - 0.5s) - Now controls particle ADSR attack
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "attack",
         "Attack",
-        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
-        20.0f,
+        juce::NormalisableRange<float> (0.001f, 0.5f, 0.001f, 0.3f),
+        0.01f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
-        [](float value, int) { return juce::String (value, 1) + " %"; }
+        [](float value, int) { 
+            if (value >= 0.1f)
+                return juce::String (value, 2) + " s";
+            else
+                return juce::String (value * 1000.0f, 0) + " ms";
+        }
     ));
     
-    // Release Time (0% - 100%)
+    // Release Time (0.001s - 10.0s) - Now controls particle ADSR release
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "release",
         "Release",
+        juce::NormalisableRange<float> (0.001f, 10.0f, 0.001f, 0.3f),
+        0.5f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { 
+            if (value >= 0.1f)
+                return juce::String (value, 2) + " s";
+            else
+                return juce::String (value * 1000.0f, 0) + " ms";
+        }
+    ));
+    
+    // Randomness (0% - 100%) - Controls emission direction variance (replaces lifespan)
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "randomness",
+        "Randomness",
         juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
-        20.0f,
+        0.0f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
         [](float value, int) { return juce::String (value, 1) + " %"; }
-    ));
-    
-    // Lifespan (5s - 120s)
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
-        "lifespan",
-        "Lifespan",
-        juce::NormalisableRange<float> (5.0f, 120.0f, 1.0f, 0.5f),
-        30.0f,
-        juce::String(),
-        juce::AudioProcessorParameter::genericParameter,
-        [](float value, int) { return juce::String (value, 1) + " s"; }
     ));
     
     // Master Gain (-60dB - 0dB)
@@ -244,21 +254,118 @@ void PluginProcessor::removeSpawnPoint (int index)
 }
 
 void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
-                                     float initialVelocity, float pitchShift)
+                                     float initialVelocity, float pitchShift, int midiNoteNumber,
+                                     float attackTime, float releaseTime)
 {
     const juce::ScopedLock lock (particlesLock);
     
     // Check particle limit and remove oldest if at max
     if (particles.size() >= maxParticles)
     {
-        // Remove oldest particle (index 0)
+        // Remove oldest particle (index 0) and clean up note mapping
+        auto* oldestParticle = particles[0];
+        int oldNote = oldestParticle->getMidiNoteNumber();
+        
+        // Remove from note mapping
+        if (activeNoteToParticles.count(oldNote) > 0)
+        {
+            auto& particleIndices = activeNoteToParticles[oldNote];
+            particleIndices.erase(std::remove(particleIndices.begin(), particleIndices.end(), 0), 
+                                 particleIndices.end());
+            if (particleIndices.empty())
+                activeNoteToParticles.erase(oldNote);
+        }
+        
         particles.remove (0);
         LOG_INFO("Removed oldest particle to make room (max: " + juce::String(maxParticles) + ")");
+        
+        // Decrement all particle indices in the mapping since we removed index 0
+        for (auto& pair : activeNoteToParticles)
+        {
+            for (auto& idx : pair.second)
+                if (idx > 0) idx--;
+        }
     }
     
-    auto* particle = new Particle (position, velocity, canvasBounds, 
-                                   particleLifespan, initialVelocity, pitchShift);
+    // Create new particle with ADSR parameters
+    auto* particle = new Particle (position, velocity, canvasBounds, midiNoteNumber,
+                                   attackTime, releaseTime, initialVelocity, pitchShift);
+    int newIndex = particles.size();
     particles.add (particle);
+    
+    // Add to note mapping for release handling
+    activeNoteToParticles[midiNoteNumber].push_back(newIndex);
+}
+
+//==============================================================================
+// MIDI Note Handlers
+
+void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchShift)
+{
+    LOG_INFO("handleNoteOn: note=" + juce::String(noteNumber) + " velocity=" + juce::String(velocity));
+    
+    if (spawnPoints.size() == 0)
+    {
+        LOG_WARNING("No spawn points available for note-on");
+        return;
+    }
+    
+    // Get ADSR parameters
+    float attackTime = apvts.getRawParameterValue("attack")->load();
+    float releaseTime = apvts.getRawParameterValue("release")->load();
+    float randomness = apvts.getRawParameterValue("randomness")->load() / 100.0f; // 0.0-1.0
+    
+    // Use round-robin spawn point selection
+    static int nextSpawnIndex = 0;
+    int spawnIndex = nextSpawnIndex % spawnPoints.size();
+    nextSpawnIndex = (nextSpawnIndex + 1) % spawnPoints.size();
+    
+    auto& spawn = spawnPoints[spawnIndex];
+    juce::Point<float> spawnPos = spawn.position;
+    
+    // Get base momentum from spawn point's momentum angle
+    float baseAngle = spawn.momentumAngle;
+    
+    // Apply randomness to emission direction
+    float angleVariance = randomness * juce::MathConstants<float>::pi; // 0 to PI radians variance
+    juce::Random random;
+    float randomOffset = random.nextFloat() * angleVariance * 2.0f - angleVariance; // -variance to +variance
+    float finalAngle = baseAngle + randomOffset;
+    
+    float momentumMagnitude = 50.0f;
+    juce::Point<float> initialVelocity (
+        std::cos(finalAngle) * momentumMagnitude,
+        std::sin(finalAngle) * momentumMagnitude
+    );
+    initialVelocity *= 2.0f; // Scale up for visibility
+    
+    // Spawn particle with MIDI parameters and ADSR
+    spawnParticle (spawnPos, initialVelocity, velocity, pitchShift, noteNumber, attackTime, releaseTime);
+    LOG_INFO("Particle spawned from note-on! Total particles: " + juce::String(particles.size()));
+}
+
+void PluginProcessor::handleNoteOff (int noteNumber)
+{
+    LOG_INFO("handleNoteOff: note=" + juce::String(noteNumber));
+    
+    const juce::ScopedLock lock (particlesLock);
+    
+    // Find all particles associated with this MIDI note and trigger release
+    if (activeNoteToParticles.count(noteNumber) > 0)
+    {
+        auto& particleIndices = activeNoteToParticles[noteNumber];
+        LOG_INFO("Triggering release for " + juce::String(particleIndices.size()) + " particles");
+        
+        for (int idx : particleIndices)
+        {
+            if (idx >= 0 && idx < particles.size())
+            {
+                particles[idx]->triggerRelease();
+            }
+        }
+        
+        // Don't erase from map yet - particles will be removed when release completes
+    }
 }
 
 //==============================================================================
@@ -324,9 +431,30 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSi
         // Wrap around canvas boundaries
         particle->wrapAround (canvasBounds);
         
-        // Remove dead particles
-        if (particle->isDead())
+        // Remove finished particles (ADSR release complete)
+        if (particle->isFinished())
+        {
+            int noteNumber = particle->getMidiNoteNumber();
+            
+            // Clean up note mapping
+            if (activeNoteToParticles.count(noteNumber) > 0)
+            {
+                auto& particleIndices = activeNoteToParticles[noteNumber];
+                particleIndices.erase(std::remove(particleIndices.begin(), particleIndices.end(), i), 
+                                     particleIndices.end());
+                if (particleIndices.empty())
+                    activeNoteToParticles.erase(noteNumber);
+            }
+            
             particles.remove (i);
+            
+            // Decrement all particle indices greater than i in the mapping
+            for (auto& pair : activeNoteToParticles)
+            {
+                for (auto& idx : pair.second)
+                    if (idx > i) idx--;
+            }
+        }
     }
 }
 
@@ -378,59 +506,34 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     LOG_INFO("processBlock: About to process " + juce::String(midiMessages.getNumEvents()) + " MIDI messages, canvas=" + juce::String(canvas != nullptr ? "valid" : "null"));
 
-    // Process MIDI messages to spawn particles
-    // Note: canvas can still be used during transition for spawning logic
-    if (canvas != nullptr)
+    // Process MIDI messages to spawn particles or trigger release
+    for (const auto metadata : midiMessages)
     {
-        for (const auto metadata : midiMessages)
+        LOG_INFO("Processing MIDI message in loop");
+        auto message = metadata.getMessage();
+        
+        if (message.isNoteOn())
         {
-            LOG_INFO("Processing MIDI message in loop");
-            auto message = metadata.getMessage();
+            int midiNote = message.getNoteNumber();
+            float midiVelocity = message.getVelocity() / 127.0f; // Normalize to 0.0-1.0
             
-            if (message.isNoteOn())
-            {
-                int midiNote = message.getNoteNumber();
-                float midiVelocity = message.getVelocity() / 127.0f; // Normalize to 0.0-1.0
-                
-                LOG_INFO("MIDI Note On received: note=" + juce::String(midiNote) + " velocity=" + juce::String(midiVelocity));
-                LOG_INFO("Spawn points available: " + juce::String(spawnPoints.size()));
-                
-                // Spawn particle directly from MIDI (particles now live on audio thread)
-                // Get spawn point information from canvas (if available)
-                if (canvas != nullptr && spawnPoints.size() > 0)
-                {
-                    LOG_INFO("Spawning particle from MIDI trigger...");
-                    // Use round-robin spawn point selection
-                    static int nextSpawnIndex = 0;
-                    int spawnIndex = nextSpawnIndex % spawnPoints.size();
-                    nextSpawnIndex = (nextSpawnIndex + 1) % spawnPoints.size();
-                    
-                    auto& spawn = spawnPoints[spawnIndex];
-                    juce::Point<float> spawnPos = spawn.position;
-                    
-                    // Get momentum from spawn point's momentum angle (set by user via arrow drag)
-                    float angle = spawn.momentumAngle;
-                    float momentumMagnitude = 50.0f; // Default momentum
-                    juce::Point<float> initialVelocity (
-                        std::cos(angle) * momentumMagnitude,
-                        std::sin(angle) * momentumMagnitude
-                    );
-                    initialVelocity *= 2.0f; // Scale up for visibility
-                    
-                    // Calculate pitch shift from MIDI note (C3 = 60 = no shift)
-                    float semitoneOffset = midiNote - 60;
-                    float pitchShift = std::pow (2.0f, semitoneOffset / 12.0f);
-                    
-                    // Spawn particle with MIDI parameters
-                    spawnParticle (spawnPos, initialVelocity, midiVelocity, pitchShift);
-                    LOG_INFO("Particle spawned! Total particles: " + juce::String(particles.size()));
-                }
-                else
-                {
-                    LOG_INFO("Cannot spawn particle - canvas=" + juce::String(canvas != nullptr ? "valid" : "null") + 
-                        ", spawnPoints=" + juce::String(spawnPoints.size()));
-                }
-            }
+            LOG_INFO("MIDI Note On received: note=" + juce::String(midiNote) + " velocity=" + juce::String(midiVelocity));
+            
+            // Calculate pitch shift from MIDI note (C3 = 60 = no shift)
+            float semitoneOffset = midiNote - 60;
+            float pitchShift = std::pow (2.0f, semitoneOffset / 12.0f);
+            
+            // Spawn particle with ADSR control
+            handleNoteOn (midiNote, midiVelocity, pitchShift);
+        }
+        else if (message.isNoteOff())
+        {
+            int midiNote = message.getNoteNumber();
+            
+            LOG_INFO("MIDI Note Off received: note=" + juce::String(midiNote));
+            
+            // Trigger release phase for all particles associated with this note
+            handleNoteOff (midiNote);
         }
     }
     
@@ -445,10 +548,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Get parameter values
     float grainSizeMs = apvts.getRawParameterValue("grainSize")->load();
     float grainFreq = apvts.getRawParameterValue("grainFreq")->load();
-    float attackMs = apvts.getRawParameterValue("attack")->load();
-    float releaseMs = apvts.getRawParameterValue("release")->load();
     float masterGainDb = apvts.getRawParameterValue("masterGain")->load();
     float masterGainLinear = juce::Decibels::decibelsToGain(masterGainDb);
+    
+    // Note: attack and release are now ADSR parameters, not grain envelope parameters
+    // Grain crossfade is hardcoded to 50% in Particle::getGrainAmplitude()
     
     // Lock particles for grain processing (already locked in updateParticleSimulation, but released)
     const juce::ScopedLock lock (particlesLock);
@@ -462,8 +566,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Update sample rate if needed (cached internally)
         particle->updateSampleRate (getSampleRate());
         
-        // Update grain parameters
-        particle->setGrainParameters (grainSizeMs, attackMs, releaseMs);
+        // Update grain parameters (attack/release ignored - kept for API compatibility)
+        particle->setGrainParameters (grainSizeMs, 0.0f, 0.0f);
         
         // Check if we should trigger a new grain based on frequency
         if (particle->shouldTriggerNewGrain (getSampleRate(), grainFreq))
@@ -493,10 +597,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             
             // Get edge crossfade info for smooth wraparound panning
             auto crossfade = particle->getEdgeCrossfade();
-            float amplitude = particle->getGrainAmplitude (grain); // 0.0 to 1.0 (includes envelope)
             
-            // Apply lifetime fade (quieter as particle dies)
-            amplitude *= particle->getLifetimeAmplitude();
+            // Get grain amplitude (includes hardcoded 50% crossfade AND particle ADSR)
+            float amplitude = particle->getGrainAmplitude (grain); // 0.0 to 1.0
             
             // Apply MIDI velocity
             amplitude *= particle->getInitialVelocityMultiplier();
