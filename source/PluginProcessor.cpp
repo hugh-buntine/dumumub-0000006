@@ -19,6 +19,14 @@ PluginProcessor::PluginProcessor()
     // Initialize the logger
     Logger::getInstance().initialize("dumumub-0000006.log", "dumumub-0000006 Plugin Logger");
     LOG_INFO("PluginProcessor constructed");
+    
+    // Create default mass point at center (will be positioned correctly when canvas size is known)
+    massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });
+    
+    // Create default spawn point at center with angle pointing right
+    spawnPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 0.0f });
+    
+    LOG_INFO("Created default mass point and spawn point");
 }
 
 PluginProcessor::~PluginProcessor()
@@ -183,6 +191,147 @@ void PluginProcessor::releaseResources()
     // spare memory, etc.
 }
 
+//==============================================================================
+// Mass and spawn point management
+
+void PluginProcessor::updateMassPoint (int index, juce::Point<float> position, float massMultiplier)
+{
+    if (index >= 0 && index < static_cast<int>(massPoints.size()))
+    {
+        massPoints[index].position = position;
+        massPoints[index].massMultiplier = massMultiplier;
+    }
+}
+
+void PluginProcessor::addMassPoint (juce::Point<float> position, float massMultiplier)
+{
+    MassPointData data;
+    data.position = position;
+    data.massMultiplier = massMultiplier;
+    massPoints.push_back (data);
+}
+
+void PluginProcessor::removeMassPoint (int index)
+{
+    if (index >= 0 && index < static_cast<int>(massPoints.size()))
+        massPoints.erase (massPoints.begin() + index);
+}
+
+void PluginProcessor::updateSpawnPoint (int index, juce::Point<float> position, float angle)
+{
+    if (index >= 0 && index < static_cast<int>(spawnPoints.size()))
+    {
+        spawnPoints[index].position = position;
+        spawnPoints[index].momentumAngle = angle;
+    }
+}
+
+void PluginProcessor::addSpawnPoint (juce::Point<float> position, float angle)
+{
+    SpawnPointData data;
+    data.position = position;
+    data.momentumAngle = angle;
+    spawnPoints.push_back (data);
+    LOG_INFO("Processor: Added spawn point - Total: " + juce::String(spawnPoints.size()) + 
+        " at (" + juce::String(position.x) + ", " + juce::String(position.y) + 
+        ") angle: " + juce::String(angle));
+}
+
+void PluginProcessor::removeSpawnPoint (int index)
+{
+    if (index >= 0 && index < static_cast<int>(spawnPoints.size()))
+        spawnPoints.erase (spawnPoints.begin() + index);
+}
+
+void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
+                                     float initialVelocity, float pitchShift)
+{
+    const juce::ScopedLock lock (particlesLock);
+    
+    // Check particle limit and remove oldest if at max
+    if (particles.size() >= maxParticles)
+    {
+        // Remove oldest particle (index 0)
+        particles.remove (0);
+        LOG_INFO("Removed oldest particle to make room (max: " + juce::String(maxParticles) + ")");
+    }
+    
+    auto* particle = new Particle (position, velocity, canvasBounds, 
+                                   particleLifespan, initialVelocity, pitchShift);
+    particles.add (particle);
+}
+
+//==============================================================================
+// Particle simulation update
+
+void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSize)
+{
+    // Calculate time since last update
+    if (lastUpdateTime == 0.0)
+        lastUpdateTime = currentTime;
+    
+    float deltaTime = static_cast<float>(currentTime - lastUpdateTime);
+    lastUpdateTime = currentTime;
+    
+    // Clamp delta time to avoid huge jumps
+    deltaTime = juce::jmin (deltaTime, 0.1f);
+    
+    // Lock particles for update
+    const juce::ScopedLock lock (particlesLock);
+    
+    // Update spawn point visual rotations (animation only, not used for particle spawning)
+    for (auto& spawn : spawnPoints)
+    {
+        spawn.visualRotation += deltaTime * 0.5f; // Rotate at 0.5 rad/s
+        if (spawn.visualRotation > juce::MathConstants<float>::twoPi)
+            spawn.visualRotation -= juce::MathConstants<float>::twoPi;
+    }
+    
+    // Update all particles
+    for (int i = particles.size() - 1; i >= 0; --i)
+    {
+        auto* particle = particles[i];
+        
+        // Update canvas bounds
+        particle->setCanvasBounds (canvasBounds);
+        
+        // Calculate gravity force from all mass points
+        juce::Point<float> totalForce (0.0f, 0.0f);
+        
+        for (const auto& mass : massPoints)
+        {
+            juce::Point<float> particlePos = particle->getPosition();
+            juce::Point<float> direction = mass.position - particlePos;
+            float distance = direction.getDistanceFromOrigin();
+            
+            // Avoid division by zero and singularities
+            if (distance > 5.0f)
+            {
+                // Apply mass multiplier based on size
+                float effectiveGravity = gravityStrength * mass.massMultiplier;
+                float forceMagnitude = effectiveGravity / (distance * distance);
+                juce::Point<float> normalizedDirection = direction / distance;
+                totalForce += normalizedDirection * forceMagnitude;
+            }
+        }
+        
+        // Apply gravity force
+        particle->applyForce (totalForce);
+        
+        // Update particle physics
+        particle->update (deltaTime);
+        
+        // Wrap around canvas boundaries
+        particle->wrapAround (canvasBounds);
+        
+        // Remove dead particles
+        if (particle->isDead())
+            particles.remove (i);
+    }
+}
+
+//==============================================================================
+
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
   #if JucePlugin_IsMidiEffect
@@ -221,16 +370,21 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         const juce::ScopedLock lock (midiLock);
         if (!pendingMidiMessages.isEmpty())
         {
+            LOG_INFO("Merging " + juce::String(pendingMidiMessages.getNumEvents()) + " pending MIDI messages into buffer");
             midiMessages.addEvents (pendingMidiMessages, 0, buffer.getNumSamples(), 0);
             pendingMidiMessages.clear();
         }
     }
 
+    LOG_INFO("processBlock: About to process " + juce::String(midiMessages.getNumEvents()) + " MIDI messages, canvas=" + juce::String(canvas != nullptr ? "valid" : "null"));
+
     // Process MIDI messages to spawn particles
+    // Note: canvas can still be used during transition for spawning logic
     if (canvas != nullptr)
     {
         for (const auto metadata : midiMessages)
         {
+            LOG_INFO("Processing MIDI message in loop");
             auto message = metadata.getMessage();
             
             if (message.isNoteOn())
@@ -238,18 +392,54 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int midiNote = message.getNoteNumber();
                 float midiVelocity = message.getVelocity() / 127.0f; // Normalize to 0.0-1.0
                 
-                // Spawn particle from MIDI on the message thread (safe for canvas operations)
-                juce::MessageManager::callAsync ([this, midiNote, midiVelocity]()
+                LOG_INFO("MIDI Note On received: note=" + juce::String(midiNote) + " velocity=" + juce::String(midiVelocity));
+                LOG_INFO("Spawn points available: " + juce::String(spawnPoints.size()));
+                
+                // Spawn particle directly from MIDI (particles now live on audio thread)
+                // Get spawn point information from canvas (if available)
+                if (canvas != nullptr && spawnPoints.size() > 0)
                 {
-                    if (canvas != nullptr)
-                        canvas->spawnParticleFromMidi (midiNote, midiVelocity);
-                });
+                    LOG_INFO("Spawning particle from MIDI trigger...");
+                    // Use round-robin spawn point selection
+                    static int nextSpawnIndex = 0;
+                    int spawnIndex = nextSpawnIndex % spawnPoints.size();
+                    nextSpawnIndex = (nextSpawnIndex + 1) % spawnPoints.size();
+                    
+                    auto& spawn = spawnPoints[spawnIndex];
+                    juce::Point<float> spawnPos = spawn.position;
+                    
+                    // Get momentum from spawn point's momentum angle (set by user via arrow drag)
+                    float angle = spawn.momentumAngle;
+                    float momentumMagnitude = 50.0f; // Default momentum
+                    juce::Point<float> initialVelocity (
+                        std::cos(angle) * momentumMagnitude,
+                        std::sin(angle) * momentumMagnitude
+                    );
+                    initialVelocity *= 2.0f; // Scale up for visibility
+                    
+                    // Calculate pitch shift from MIDI note (C3 = 60 = no shift)
+                    float semitoneOffset = midiNote - 60;
+                    float pitchShift = std::pow (2.0f, semitoneOffset / 12.0f);
+                    
+                    // Spawn particle with MIDI parameters
+                    spawnParticle (spawnPos, initialVelocity, midiVelocity, pitchShift);
+                    LOG_INFO("Particle spawned! Total particles: " + juce::String(particles.size()));
+                }
+                else
+                {
+                    LOG_INFO("Cannot spawn particle - canvas=" + juce::String(canvas != nullptr ? "valid" : "null") + 
+                        ", spawnPoints=" + juce::String(spawnPoints.size()));
+                }
             }
         }
     }
+    
+    // Update particle simulation (physics, gravity, lifetime)
+    double currentTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    updateParticleSimulation (currentTime, buffer.getNumSamples());
 
-    // Check if we have audio file loaded and canvas available
-    if (!hasAudioFileLoaded() || canvas == nullptr || audioFileBuffer.getNumSamples() == 0)
+    // Check if we have audio file loaded
+    if (!hasAudioFileLoaded() || audioFileBuffer.getNumSamples() == 0)
         return;
     
     // Get parameter values
@@ -260,16 +450,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     float masterGainDb = apvts.getRawParameterValue("masterGain")->load();
     float masterGainLinear = juce::Decibels::decibelsToGain(masterGainDb);
     
-    // Get particles from canvas (thread-safe)
-    auto& particlesLock = canvas->getParticlesLock();
+    // Lock particles for grain processing (already locked in updateParticleSimulation, but released)
     const juce::ScopedLock lock (particlesLock);
-    auto* particles = canvas->getParticles();
     
-    if (particles == nullptr || particles->isEmpty())
+    if (particles.isEmpty())
         return;
     
     // Process each particle's grains
-    for (auto* particle : *particles)
+    for (auto* particle : particles)
     {
         // Update sample rate if needed (cached internally)
         particle->updateSampleRate (getSampleRate());
@@ -401,17 +589,107 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 //==============================================================================
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-    juce::ignoreUnused (destData);
+    // Save plugin state to XML
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    
+    // Add audio file path
+    if (loadedAudioFile.existsAsFile())
+    {
+        xml->setAttribute ("audioFile", loadedAudioFile.getFullPathName());
+    }
+    
+    // Save mass points
+    auto* massPointsXml = xml->createNewChildElement ("MassPoints");
+    for (const auto& mp : massPoints)
+    {
+        auto* mpXml = massPointsXml->createNewChildElement ("MassPoint");
+        mpXml->setAttribute ("x", mp.position.x);
+        mpXml->setAttribute ("y", mp.position.y);
+        mpXml->setAttribute ("mass", mp.massMultiplier);
+    }
+    
+    // Save spawn points
+    auto* spawnPointsXml = xml->createNewChildElement ("SpawnPoints");
+    for (const auto& sp : spawnPoints)
+    {
+        auto* spXml = spawnPointsXml->createNewChildElement ("SpawnPoint");
+        spXml->setAttribute ("x", sp.position.x);
+        spXml->setAttribute ("y", sp.position.y);
+        spXml->setAttribute ("momentumAngle", sp.momentumAngle);  // Save user-set momentum direction (not visual rotation)
+    }
+    
+    copyXmlToBinary (*xml, destData);
+    LOG_INFO("Saved plugin state with " + juce::String(massPoints.size()) + " mass points, " +
+             juce::String(spawnPoints.size()) + " spawn points");
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
-    juce::ignoreUnused (data, sizeInBytes);
+    // Restore plugin state from XML
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+    
+    if (xmlState != nullptr)
+    {
+        // Restore parameters
+        if (xmlState->hasTagName (apvts.state.getType()))
+        {
+            apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+        }
+        
+        // Restore audio file
+        if (xmlState->hasAttribute ("audioFile"))
+        {
+            juce::File audioFile (xmlState->getStringAttribute ("audioFile"));
+            if (audioFile.existsAsFile())
+            {
+                loadAudioFile (audioFile);
+                LOG_INFO("Restored audio file: " + audioFile.getFullPathName());
+            }
+            else
+            {
+                LOG_WARNING("Saved audio file not found: " + audioFile.getFullPathName());
+            }
+        }
+        
+        // Restore mass points
+        auto* massPointsXml = xmlState->getChildByName ("MassPoints");
+        if (massPointsXml != nullptr)
+        {
+            massPoints.clear();
+            for (auto* mpXml : massPointsXml->getChildIterator())
+            {
+                if (mpXml->hasTagName ("MassPoint"))
+                {
+                    MassPointData mp;
+                    mp.position.x = static_cast<float>(mpXml->getDoubleAttribute ("x"));
+                    mp.position.y = static_cast<float>(mpXml->getDoubleAttribute ("y"));
+                    mp.massMultiplier = static_cast<float>(mpXml->getDoubleAttribute ("mass"));
+                    massPoints.push_back (mp);
+                }
+            }
+            LOG_INFO("Restored " + juce::String(massPoints.size()) + " mass points");
+        }
+        
+        // Restore spawn points
+        auto* spawnPointsXml = xmlState->getChildByName ("SpawnPoints");
+        if (spawnPointsXml != nullptr)
+        {
+            spawnPoints.clear();
+            for (auto* spXml : spawnPointsXml->getChildIterator())
+            {
+                if (spXml->hasTagName ("SpawnPoint"))
+                {
+                    SpawnPointData sp;
+                    sp.position.x = static_cast<float>(spXml->getDoubleAttribute ("x"));
+                    sp.position.y = static_cast<float>(spXml->getDoubleAttribute ("y"));
+                    sp.momentumAngle = static_cast<float>(spXml->getDoubleAttribute ("momentumAngle"));  // Load user-set momentum direction
+                    spawnPoints.push_back (sp);
+                }
+            }
+            LOG_INFO("Restored " + juce::String(spawnPoints.size()) + " spawn points");
+        }
+    }
 }
 
 //==============================================================================

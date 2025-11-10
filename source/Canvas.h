@@ -8,13 +8,16 @@
 #include "Particle.h"
 #include "CustomPopupMenuLookAndFeel.h"
 
+// Forward declaration to avoid circular dependency
+class PluginProcessor;
+
 //==============================================================================
 class Canvas : public juce::Component, 
                private juce::Timer,
                public juce::FileDragAndDropTarget
 {
 public:
-    Canvas();
+    Canvas (PluginProcessor& processor);
     ~Canvas() override;
 
     //==============================================================================
@@ -28,6 +31,8 @@ public:
     void drawMomentumArrows (juce::Graphics& g);
     void drawParticles (juce::Graphics& g);
     void drawWaveform (juce::Graphics& g);
+    void drawSpawnPoints (juce::Graphics& g);
+    void drawMassPoints (juce::Graphics& g);
     
     // Timer callback for physics updates
     void timerCallback() override;
@@ -55,11 +60,15 @@ public:
     // Set break CPU mode (unlimited particles/masses/spawn points)
     void setBreakCpuMode (bool enabled);
     
-    // Access to particles for audio processing (thread-safe copy)
-    juce::OwnedArray<Particle>* getParticles() { return &particles; }
-    juce::CriticalSection& getParticlesLock() { return particlesLock; }
+    // Access to particles - now deprecated, particles live in processor
+    // These are kept for backward compatibility during transition
+    juce::OwnedArray<Particle>* getParticles();
+    juce::CriticalSection& getParticlesLock();
 
 private:
+    
+    // Reference to audio processor (owns the particle simulation)
+    PluginProcessor& audioProcessor;
 
     bool breakCpuMode = false;
     int maxSpawnPoints = 8;
@@ -67,7 +76,7 @@ private:
     int maxParticles = 8;
     juce::OwnedArray<SpawnPoint> spawnPoints;
     juce::OwnedArray<MassPoint> massPoints;
-    juce::OwnedArray<Particle> particles;
+    // Particles now live in audioProcessor, not here!
     
     bool showGravityWaves = true;
     int nextSpawnPointIndex = 0; // Round-robin particle emission
@@ -89,11 +98,13 @@ private:
     bool isMouseNearArrowTip (SpawnPoint* spawn, const juce::Point<float>& mousePos) const;
     juce::Point<float> getSpawnPointCenter (SpawnPoint* spawn) const;
     
+    // Sync GUI components with processor data (for loading saved state)
+    void syncGuiFromProcessor();
+    
     // Custom popup menu look and feel
     CustomPopupMenuLookAndFeel popupMenuLookAndFeel;
     
-    // Thread safety for particle access
-    juce::CriticalSection particlesLock;
+    // Thread safety removed - particles lock now lives in processor
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Canvas)
 };

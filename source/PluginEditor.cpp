@@ -184,23 +184,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Start timer to update particle count (10 Hz)
     startTimer (100);
     
-    // Setup MIDI trigger button (C3 = MIDI note 60)
-    addAndMakeVisible (midiTriggerButton);
-    
-    // Send note on when button is pressed
-    midiTriggerButton.onNoteOn = [this]() {
-        // Trigger C3 (MIDI note 60) with velocity 100
-        auto midiMessage = juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100);
-        processorRef.injectMidiMessage (midiMessage);
-    };
-    
-    // Send note off when button is released
-    midiTriggerButton.onNoteOff = [this]() {
-        // Note off for C3 (MIDI note 60)
-        auto midiMessage = juce::MidiMessage::noteOff (1, 60, (juce::uint8) 0);
-        processorRef.injectMidiMessage (midiMessage);
-    };
-    
     // Setup parameter sliders
     auto& apvts = processorRef.getAPVTS();
     
@@ -256,6 +239,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     masterGainSlider.setLookAndFeel (&masterGainLookAndFeel);
     masterGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "masterGain", masterGainSlider);
+    
+    // Check if audio file was already loaded (from restored state)
+    if (processorRef.hasAudioFileLoaded())
+    {
+        auto loadedFile = processorRef.getLoadedAudioFile();
+        audioFileLabel.setText (loadedFile.getFileName(), juce::dontSendNotification);
+        canvas.setAudioBuffer (processorRef.getAudioBuffer());
+        LOG_INFO("Editor initialized with restored audio file: " + loadedFile.getFullPathName());
+    }
 }
 
 PluginEditor::~PluginEditor()
@@ -407,9 +399,6 @@ void PluginEditor::resized()
 {
     // layout the positions of your child components here
     inspectButton.setBounds (getWidth() - 50, getHeight() - 50, 50, 50);
-    
-    // MIDI Trigger button at top center
-    midiTriggerButton.setBounds (180, 10, 140, 30);
     
     // Canvas - positioned at (50, 125) with 400x400 size
     canvas.setBounds (50, 125, 400, 400);

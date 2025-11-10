@@ -1,12 +1,28 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "Particle.h"
 
 #if (MSVC)
 #include "ipps.h"
 #endif
 
 class Canvas; // Forward declaration
+
+// Simplified mass point data for physics simulation (processor side)
+struct MassPointData
+{
+    juce::Point<float> position;
+    float massMultiplier = 1.0f; // 1.0 for small, up to 4.0 for massive
+};
+
+// Simplified spawn point data for particle emission (processor side)
+struct SpawnPointData
+{
+    juce::Point<float> position;
+    float momentumAngle = 0.0f; // Direction particles should spawn (set by user via arrow)
+    float visualRotation = 0.0f; // Current rotation angle for visual animation only
+};
 
 class PluginProcessor : public juce::AudioProcessor
 {
@@ -54,6 +70,31 @@ public:
     
     // Parameter access
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
+    
+    // Particle simulation access (thread-safe, for GUI drawing)
+    juce::OwnedArray<Particle>* getParticles() { return &particles; }
+    juce::CriticalSection& getParticlesLock() { return particlesLock; }
+    
+    // Mass and spawn point management (called from GUI thread)
+    void updateMassPoint (int index, juce::Point<float> position, float massMultiplier);
+    void addMassPoint (juce::Point<float> position, float massMultiplier);
+    void removeMassPoint (int index);
+    const std::vector<MassPointData>& getMassPoints() const { return massPoints; }
+    
+    void updateSpawnPoint (int index, juce::Point<float> position, float angle);
+    void addSpawnPoint (juce::Point<float> position, float angle);
+    void removeSpawnPoint (int index);
+    const std::vector<SpawnPointData>& getSpawnPoints() const { return spawnPoints; }
+    
+    // Particle spawning (called from GUI or MIDI)
+    void spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
+                       float initialVelocity, float pitchShift);
+    
+    // Gravity and canvas settings
+    void setGravityStrength (float strength) { gravityStrength = strength; }
+    void setCanvasBounds (juce::Rectangle<float> bounds) { canvasBounds = bounds; }
+    void setParticleLifespan (float lifespan) { particleLifespan = lifespan; }
+    void setMaxParticles (int max) { maxParticles = max; }
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
@@ -67,10 +108,30 @@ private:
     juce::AudioBuffer<float> audioFileBuffer;
     double audioFileSampleRate = 0.0;
     
-    // Canvas reference (not owned)
+    // Canvas reference (not owned) - kept for backward compatibility during transition
     Canvas* canvas = nullptr;
     
     // Pending MIDI messages from UI
     juce::MidiBuffer pendingMidiMessages;
     juce::CriticalSection midiLock;
+    
+    //==============================================================================
+    // Particle simulation (runs in audio thread)
+    juce::OwnedArray<Particle> particles;
+    juce::CriticalSection particlesLock; // Protects particle array
+    
+    std::vector<MassPointData> massPoints;
+    std::vector<SpawnPointData> spawnPoints;
+    
+    // Simulation parameters
+    float gravityStrength = 100.0f;
+    juce::Rectangle<float> canvasBounds {0, 0, 800, 600};
+    float particleLifespan = 30.0f;
+    int maxParticles = 8; // Default limit (can be changed via setMaxParticles)
+    
+    // Timing for particle updates
+    double lastUpdateTime = 0.0;
+    
+    // Helper method to update particle physics
+    void updateParticleSimulation (double currentTime, int bufferSize);
 };

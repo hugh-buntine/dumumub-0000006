@@ -1,20 +1,26 @@
 #include "Canvas.h"
 #include "Logger.h"
+#include "PluginProcessor.h"
 
 //==============================================================================
-Canvas::Canvas()
+Canvas::Canvas (PluginProcessor& processor)
+    : audioProcessor (processor)
 {
     // Constructor
     LOG_INFO("Canvas created");
     setSize (400, 400);
     
-    // Create the mass point (center of gravity)
-    newMassPoint();
+    // Set initial canvas bounds in processor so particles know where to wrap
+    audioProcessor.setCanvasBounds (getLocalBounds().toFloat());
     
-    // Create first spawn point
-    newSpawnPoint();
+    // Set gravity strength in processor
+    audioProcessor.setGravityStrength (gravityStrength);
     
-    // Start physics timer (60 FPS)
+    // Create GUI components to match whatever is in the processor
+    // (The processor may have loaded saved state, or may be empty)
+    syncGuiFromProcessor();
+    
+    // Start timer for GUI updates (60 FPS) - physics now in processor
     startTimer (1000 / 60);
 }
 
@@ -22,9 +28,26 @@ Canvas::~Canvas()
 {
     // Destructor
     stopTimer();
+    
+    auto* processorParticles = audioProcessor.getParticles();
+    int particleCount = processorParticles ? processorParticles->size() : 0;
+    
     LOG_INFO("Canvas destroyed - had " + juce::String(spawnPoints.size()) + 
              " spawn points, " + juce::String(massPoints.size()) + " mass points, and " +
-             juce::String(particles.size()) + " particles");
+             juce::String(particleCount) + " particles");
+}
+
+//==============================================================================
+// Particle Access Methods (forwarding to processor)
+
+juce::OwnedArray<Particle>* Canvas::getParticles()
+{
+    return audioProcessor.getParticles();
+}
+
+juce::CriticalSection& Canvas::getParticlesLock()
+{
+    return audioProcessor.getParticlesLock();
 }
 
 //==============================================================================
@@ -38,6 +61,7 @@ void Canvas::setBreakCpuMode (bool enabled)
         maxSpawnPoints = std::numeric_limits<int>::max();
         maxMassPoints = std::numeric_limits<int>::max();
         maxParticles = std::numeric_limits<int>::max();
+        audioProcessor.setMaxParticles (std::numeric_limits<int>::max());
         LOG_INFO("Break CPU mode enabled - unlimited particles/masses/spawn points");
     }
     else
@@ -46,6 +70,7 @@ void Canvas::setBreakCpuMode (bool enabled)
         maxSpawnPoints = 8;
         maxMassPoints = 4;
         maxParticles = 8;
+        audioProcessor.setMaxParticles (8);
         LOG_INFO("Break CPU mode disabled - limited to 4 masses, 8 spawn points, 8 particles");
     }
 }
@@ -73,132 +98,141 @@ void Canvas::paint (juce::Graphics& g)
     // Draw particles (above gravity waves)
     drawParticles (g);
     
+    // SpawnPoint and MassPoint components render themselves now
+    // (they are child components that call their own paint() methods)
+    
     // Draw momentum arrows (on top of gravity waves, behind spawn points)
     drawMomentumArrows (g);
 }
 
 void Canvas::resized()
 {
-    // Layout child components here
+    // Update canvas bounds in processor whenever canvas is resized
+    audioProcessor.setCanvasBounds (getLocalBounds().toFloat());
+    
+    LOG_INFO("Canvas resized to " + juce::String(getWidth()) + "x" + juce::String(getHeight()));
 }
 
 void Canvas::newMassPoint()
 {
-    if (massPoints.size() < maxMassPoints)
-    {
-        auto* newMass = new MassPoint();
-        massPoints.add (newMass);
-        addAndMakeVisible (newMass);
-        
-        // Set callback to repaint when mass is being moved (every frame during drag)
-        newMass->onMassMoved = [this]() { 
-            repaint();
-        };
-        
-        // Set callback to repaint when mass is dropped
-        newMass->onMassDropped = [this]() { 
-            repaint();
-            LOG_INFO("Mass dropped - repainting gravity waves");
-        };
-        
-        // Set callback for delete request
-        newMass->onDeleteRequested = [this, newMass]() {
-            massPoints.removeObject (newMass);
-            repaint();
-            LOG_INFO("Deleted mass point");
-        };
-        
-        // Place at random position on canvas
-        if (getWidth() > 0 && getHeight() > 0)
-        {
-            juce::Random random;
-            int x = random.nextInt (getWidth());
-            int y = random.nextInt (getHeight());
-            newMass->setCentrePosition (x, y);
-            LOG_INFO("Created new mass point at (" + juce::String(x) + ", " + juce::String(y) + ")");
-        }
-        else
-        {
-            LOG_WARNING("Canvas bounds not yet set - mass point placed at origin");
-        }
-        
-        // Repaint to show gravity waves for newly added mass
-        repaint();
-    }
-    else
+    // Check limit
+    if (!breakCpuMode && massPoints.size() >= maxMassPoints)
     {
         LOG_WARNING("Maximum mass points reached (" + juce::String(maxMassPoints) + ")");
+        return;
     }
+    
+    // Place at random position on canvas
+    juce::Random random;
+    float x = getWidth() > 0 ? random.nextFloat() * getWidth() : 100.0f;
+    float y = getHeight() > 0 ? random.nextFloat() * getHeight() : 100.0f;
+    
+    // Create GUI component for interaction and custom rendering
+    auto* mass = new MassPoint();
+    addAndMakeVisible (mass);
+    mass->setCentrePosition (juce::Point<int>(x, y));
+    
+    // Set up callbacks to sync with processor
+    mass->onMassDropped = [this]() { repaint(); };
+    mass->onMassMoved = [this, mass]() 
+    { 
+        // Update processor data when GUI component moves
+        int index = massPoints.indexOf (mass);
+        if (index >= 0 && index < audioProcessor.getMassPoints().size())
+        {
+            auto center = mass->getBounds().getCentre();
+            audioProcessor.updateMassPoint (index, juce::Point<float>(center.x, center.y), mass->getMassMultiplier());
+        }
+        repaint(); 
+    };
+    mass->onDeleteRequested = [this, mass]() 
+    {
+        // Remove from both GUI and processor
+        int index = massPoints.indexOf (mass);
+        if (index >= 0)
+            audioProcessor.removeMassPoint (index);
+        massPoints.removeObject (mass);
+        repaint();
+        LOG_INFO("Deleted mass point");
+    };
+    
+    massPoints.add (mass);
+    
+    // Add to processor
+    juce::Point<float> pos (x, y);
+    audioProcessor.addMassPoint (pos, mass->getMassMultiplier());
+    
+    LOG_INFO("Created new mass point at (" + juce::String(x) + ", " + juce::String(y) + ")");
+    repaint();
 }
 
 void Canvas::newSpawnPoint()
 {
-    if (spawnPoints.size() < maxSpawnPoints)
-    {
-        auto* newPoint = new SpawnPoint();
-        spawnPoints.add (newPoint);
-        addAndMakeVisible (newPoint);
-        
-        // Set callback to repaint when spawn point is moved (so arrow moves with it)
-        newPoint->onSpawnPointMoved = [this]() { 
-            repaint();
-        };
-        
-        // Set callback to repaint when selection changes (so arrow appears/disappears)
-        newPoint->onSelectionChanged = [this]() {
-            repaint();
-        };
-        
-        // Set callback for delete request
-        newPoint->onDeleteRequested = [this, newPoint]() {
-            spawnPoints.removeObject (newPoint);
-            repaint();
-            LOG_INFO("Deleted spawn point");
-        };
-        
-        // Set callback to get spawn point count (for menu state)
-        newPoint->getSpawnPointCount = [this]() {
-            return spawnPoints.size();
-        };
-        
-        // Place at random position on canvas
-        if (getWidth() > 0 && getHeight() > 0)
-        {
-            juce::Random random;
-            int x = random.nextInt (getWidth());
-            int y = random.nextInt (getHeight());
-            newPoint->setCentrePosition (x, y);
-            
-            // Set random momentum arrow (random direction and length)
-            float randomAngle = random.nextFloat() * juce::MathConstants<float>::twoPi;
-            float randomLength = minArrowLength + random.nextFloat() * (maxArrowLength - minArrowLength);
-            juce::Point<float> randomMomentum (
-                randomLength * std::cos (randomAngle),
-                randomLength * std::sin (randomAngle)
-            );
-            newPoint->setMomentumVector (randomMomentum);
-            
-            LOG_INFO("Created new spawn point at (" + juce::String(x) + ", " + juce::String(y) + 
-                     ") with momentum (" + juce::String(randomMomentum.x) + ", " + 
-                     juce::String(randomMomentum.y) + ")");
-        }
-        else
-        {
-            LOG_WARNING("Canvas bounds not yet set - spawn point placed at origin");
-        }
-        
-        // Repaint to show arrow for newly added spawn point
-        repaint();
-    }
-    else
+    // Check limit
+    if (!breakCpuMode && spawnPoints.size() >= maxSpawnPoints)
     {
         LOG_WARNING("Maximum spawn points reached (" + juce::String(maxSpawnPoints) + ")");
+        return;
     }
+    
+    // Place at random position on canvas
+    juce::Random random;
+    float x = getWidth() > 0 ? random.nextFloat() * getWidth() : 100.0f;
+    float y = getHeight() > 0 ? random.nextFloat() * getHeight() : 100.0f;
+    
+    // Create GUI component for interaction and custom rendering
+    auto* spawn = new SpawnPoint();
+    addAndMakeVisible (spawn);
+    spawn->setCentrePosition (juce::Point<int>(x, y));
+    
+    // Set up callbacks to sync with processor
+    spawn->onSpawnPointMoved = [this, spawn]() 
+    { 
+        // Update processor data when GUI component moves
+        int index = spawnPoints.indexOf (spawn);
+        if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+        {
+            auto center = spawn->getBounds().getCentre();
+            // Get the momentum vector angle
+            auto momentum = spawn->getMomentumVector();
+            float angle = std::atan2(momentum.y, momentum.x);
+            audioProcessor.updateSpawnPoint (index, juce::Point<float>(center.x, center.y), angle);
+        }
+        repaint(); 
+    };
+    spawn->onSelectionChanged = [this]() { repaint(); };
+    spawn->onDeleteRequested = [this, spawn]() 
+    {
+        // Remove from both GUI and processor
+        int index = spawnPoints.indexOf (spawn);
+        if (index >= 0)
+            audioProcessor.removeSpawnPoint (index);
+        spawnPoints.removeObject (spawn);
+        repaint();
+        LOG_INFO("Deleted spawn point");
+    };
+    spawn->getSpawnPointCount = [this]() 
+    {
+        return spawnPoints.size();
+    };
+    
+    spawnPoints.add (spawn);
+    
+    // Add to processor with momentum angle
+    juce::Point<float> pos (x, y);
+    auto momentum = spawn->getMomentumVector();
+    float angle = std::atan2(momentum.y, momentum.x);
+    audioProcessor.addSpawnPoint (pos, angle);
+    
+    LOG_INFO("Created new spawn point at (" + juce::String(x) + ", " + juce::String(y) + ") angle: " + juce::String(angle));
+    repaint();
 }
 
 void Canvas::drawGravityWaves (juce::Graphics& g)
 {
-    if (massPoints.isEmpty())
+    const auto& massPointsData = audioProcessor.getMassPoints();
+    
+    if (massPointsData.empty())
         return;
     
     // Ripples around mass points removed - vortex images are now used instead
@@ -264,52 +298,28 @@ void Canvas::drawGravityWaves (juce::Graphics& g)
 
 void Canvas::drawMomentumArrows (juce::Graphics& g)
 {
+    // Draw momentum arrows for selected spawn points
     for (auto* spawn : spawnPoints)
     {
-        // Only draw arrow for selected spawn points
-        if (!spawn->isSelected())
-            continue;
-        
-        juce::Point<float> center = getSpawnPointCenter (spawn);
-        juce::Point<float> momentumVector = spawn->getMomentumVector();
-        juce::Point<float> arrowEnd = center + momentumVector;
-        
-        // Draw arrow line with gradient from transparent to opaque
-        if (momentumVector.getDistanceFromOrigin() > 2.0f)
+        if (spawn->isSelected())
         {
-            // Draw multiple segments with increasing opacity
-            const int numSegments = 20;
-            for (int i = 0; i < numSegments; ++i)
-            {
-                float t1 = (float)i / numSegments;
-                float t2 = (float)(i + 1) / numSegments;
-                
-                juce::Point<float> p1 = center + momentumVector * t1;
-                juce::Point<float> p2 = center + momentumVector * t2;
-                
-                // Fade from 0% to 100% opacity
-                float alpha = (t1 + t2) / 2.0f; // Use midpoint opacity for this segment
-                g.setColour (juce::Colours::red.withAlpha (alpha));
-                g.drawLine (p1.x, p1.y, p2.x, p2.y, 2.0f);
-            }
+            // Get spawn point center
+            juce::Point<float> center = getSpawnPointCenter (spawn);
+            juce::Point<float> momentumVector = spawn->getMomentumVector();
             
-            // Draw arrowhead fully opaque
-            g.setColour (juce::Colours::red);
-            float angle = std::atan2 (momentumVector.y, momentumVector.x);
-            float arrowHeadSize = 5.0f;
+            // Draw arrow from center to momentum vector endpoint with red gradient
+            juce::Point<float> arrowEnd = center + momentumVector;
             
-            juce::Point<float> arrowPoint1 (
-                arrowEnd.x - arrowHeadSize * std::cos (angle - juce::MathConstants<float>::pi / 6),
-                arrowEnd.y - arrowHeadSize * std::sin (angle - juce::MathConstants<float>::pi / 6)
+            // Create gradient from base (semi-transparent red) to tip (solid red)
+            juce::ColourGradient gradient (
+                juce::Colours::red.withAlpha(0.3f),  // Base: 30% opacity
+                center.x, center.y,
+                juce::Colours::red,                   // Tip: 100% opacity
+                arrowEnd.x, arrowEnd.y,
+                false
             );
-            
-            juce::Point<float> arrowPoint2 (
-                arrowEnd.x - arrowHeadSize * std::cos (angle + juce::MathConstants<float>::pi / 6),
-                arrowEnd.y - arrowHeadSize * std::sin (angle + juce::MathConstants<float>::pi / 6)
-            );
-            
-            g.drawLine (arrowEnd.x, arrowEnd.y, arrowPoint1.x, arrowPoint1.y, 2.0f);
-            g.drawLine (arrowEnd.x, arrowEnd.y, arrowPoint2.x, arrowPoint2.y, 2.0f);
+            g.setGradientFill (gradient);
+            g.drawArrow (juce::Line<float> (center, arrowEnd), 3.0f, 12.0f, 10.0f);
         }
     }
 }
@@ -343,36 +353,77 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                            {
                                if (result == 1 && (breakCpuMode || massPoints.size() < maxMassPoints))
                                {
-                                   // Add mass point at mouse position
+                                   // Add mass point to processor first
+                                   audioProcessor.addMassPoint (mousePos, 4.0f); // Default to largest mass
+                                   
+                                   // Create GUI component to match
                                    auto* mass = new MassPoint();
                                    addAndMakeVisible (mass);
                                    mass->setCentrePosition (mousePos.toInt());
+                                   
+                                   // Set up callbacks to sync with processor
                                    mass->onMassDropped = [this]() { repaint(); };
-                                   mass->onMassMoved = [this]() { repaint(); };
-                                   mass->onDeleteRequested = [this, mass]() {
+                                   mass->onMassMoved = [this, mass]() 
+                                   { 
+                                       int index = massPoints.indexOf (mass);
+                                       if (index >= 0 && index < audioProcessor.getMassPoints().size())
+                                       {
+                                           auto center = mass->getBounds().getCentre();
+                                           audioProcessor.updateMassPoint (index, juce::Point<float>(center.x, center.y), mass->getMassMultiplier());
+                                       }
+                                       repaint(); 
+                                   };
+                                   mass->onDeleteRequested = [this, mass]() 
+                                   {
+                                       int index = massPoints.indexOf (mass);
+                                       if (index >= 0)
+                                           audioProcessor.removeMassPoint (index);
                                        massPoints.removeObject (mass);
                                        repaint();
                                        LOG_INFO("Deleted mass point");
                                    };
+                                   
                                    massPoints.add (mass);
                                    LOG_INFO("Added mass point at (" + juce::String(mousePos.x) + ", " + juce::String(mousePos.y) + ") - Total: " + juce::String(massPoints.size()));
                                }
                                else if (result == 2 && (breakCpuMode || spawnPoints.size() < maxSpawnPoints))
                                {
-                                   // Add spawn point at mouse position
+                                   // Add spawn point to processor first
+                                   audioProcessor.addSpawnPoint (mousePos, 0.0f); // Default angle pointing right
+                                   
+                                   // Create GUI component to match
                                    auto* spawn = new SpawnPoint();
                                    addAndMakeVisible (spawn);
                                    spawn->setCentrePosition (mousePos.toInt());
-                                   spawn->onSpawnPointMoved = [this]() { repaint(); };
+                                   
+                                   // Set up callbacks to sync with processor
+                                   spawn->onSpawnPointMoved = [this, spawn]() 
+                                   { 
+                                       int index = spawnPoints.indexOf (spawn);
+                                       if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+                                       {
+                                           auto center = spawn->getBounds().getCentre();
+                                           auto momentum = spawn->getMomentumVector();
+                                           float angle = std::atan2(momentum.y, momentum.x);
+                                           audioProcessor.updateSpawnPoint (index, juce::Point<float>(center.x, center.y), angle);
+                                       }
+                                       repaint(); 
+                                   };
                                    spawn->onSelectionChanged = [this]() { repaint(); };
-                                   spawn->onDeleteRequested = [this, spawn]() {
+                                   spawn->onDeleteRequested = [this, spawn]() 
+                                   {
+                                       int index = spawnPoints.indexOf (spawn);
+                                       if (index >= 0)
+                                           audioProcessor.removeSpawnPoint (index);
                                        spawnPoints.removeObject (spawn);
                                        repaint();
                                        LOG_INFO("Deleted spawn point");
                                    };
-                                   spawn->getSpawnPointCount = [this]() {
+                                   spawn->getSpawnPointCount = [this]() 
+                                   {
                                        return spawnPoints.size();
                                    };
+                                   
                                    spawnPoints.add (spawn);
                                    LOG_INFO("Added spawn point at (" + juce::String(mousePos.x) + ", " + juce::String(mousePos.y) + ") - Total: " + juce::String(spawnPoints.size()));
                                }
@@ -465,6 +516,17 @@ void Canvas::mouseUp (const juce::MouseEvent& event)
         auto vector = draggedArrowSpawnPoint->getMomentumVector();
         LOG_INFO("Stopped dragging arrow - momentum: (" + 
                  juce::String(vector.x) + ", " + juce::String(vector.y) + ")");
+        
+        // Update processor with new momentum angle
+        int index = spawnPoints.indexOf (draggedArrowSpawnPoint);
+        if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+        {
+            auto center = draggedArrowSpawnPoint->getBounds().getCentre();
+            float angle = std::atan2(vector.y, vector.x);
+            audioProcessor.updateSpawnPoint (index, juce::Point<float>(center.x, center.y), angle);
+            LOG_INFO("Updated processor spawn point " + juce::String(index) + " angle: " + juce::String(angle));
+        }
+        
         draggedArrowSpawnPoint = nullptr;
         setMouseCursor (juce::MouseCursor::NormalCursor);
     }
@@ -496,14 +558,16 @@ void Canvas::spawnParticle()
         return;
     }
     
-    // Lock particles for thread safety
+    // Get particles from processor
+    auto* processorParticles = audioProcessor.getParticles();
+    auto& particlesLock = audioProcessor.getParticlesLock();
     const juce::ScopedLock lock (particlesLock);
     
     // Check if we need to remove the oldest particle
-    if (particles.size() >= maxParticles)
+    if (processorParticles->size() >= maxParticles)
     {
         // Remove the oldest particle (index 0)
-        particles.remove (0);
+        processorParticles->remove (0);
         LOG_INFO("Removed oldest particle to make room (max: " + juce::String(maxParticles) + ")");
     }
     
@@ -515,13 +579,10 @@ void Canvas::spawnParticle()
     juce::Point<float> spawnPos = getSpawnPointCenter (spawn);
     juce::Point<float> initialVelocity = spawn->getMomentumVector() * 2.0f; // Scale up for visibility
     
-    // Create new particle with canvas bounds and current lifespan setting
-    // Default MIDI values: velocity = 1.0 (full), pitch = 1.0 (no shift)
-    auto* particle = new Particle (spawnPos, initialVelocity, getLocalBounds().toFloat(), 
-                                    particleLifespan, 1.0f, 1.0f);
-    particles.add (particle);
+    // Spawn particle in processor
+    audioProcessor.spawnParticle (spawnPos, initialVelocity, 1.0f, 1.0f);
     
-    LOG_INFO("Spawned particle #" + juce::String(particles.size()) + 
+    LOG_INFO("Spawned particle #" + juce::String(processorParticles->size()) + 
              " at (" + juce::String(spawnPos.x) + ", " + juce::String(spawnPos.y) + 
              ") with velocity (" + juce::String(initialVelocity.x) + ", " + 
              juce::String(initialVelocity.y) + ")");
@@ -537,14 +598,16 @@ void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
         return;
     }
     
-    // Lock particles for thread safety
+    // Get particles from processor
+    auto* processorParticles = audioProcessor.getParticles();
+    auto& particlesLock = audioProcessor.getParticlesLock();
     const juce::ScopedLock lock (particlesLock);
     
     // Check if we need to remove the oldest particle
-    if (particles.size() >= maxParticles)
+    if (processorParticles->size() >= maxParticles)
     {
         // Remove the oldest particle (index 0)
-        particles.remove (0);
+        processorParticles->remove (0);
     }
     
     // Get the spawn point using round-robin
@@ -560,12 +623,10 @@ void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
     float semitoneOffset = midiNote - 60; // C3 is reference
     float pitchShift = std::pow (2.0f, semitoneOffset / 12.0f);
     
-    // Create new particle with MIDI parameters
-    auto* particle = new Particle (spawnPos, initialVelocity, getLocalBounds().toFloat(), 
-                                    particleLifespan, midiVelocity, pitchShift);
-    particles.add (particle);
+    // Spawn particle in processor with MIDI parameters
+    audioProcessor.spawnParticle (spawnPos, initialVelocity, midiVelocity, pitchShift);
     
-    LOG_INFO("Spawned MIDI particle #" + juce::String(particles.size()) + 
+    LOG_INFO("Spawned MIDI particle #" + juce::String(processorParticles->size()) + 
              " - Note: " + juce::String(midiNote) + 
              " (" + juce::MidiMessage::getMidiNoteName(midiNote, true, true, 3) + ")" +
              ", Velocity: " + juce::String(midiVelocity, 2) + 
@@ -578,83 +639,33 @@ void Canvas::timerCallback()
 {
     const float deltaTime = 1.0f / 60.0f; // 60 FPS
     
-    // Update spawn point rotations
+    // Update spawn point rotations (GUI only)
     for (auto* spawn : spawnPoints)
     {
         spawn->updateRotation (deltaTime);
         spawn->repaint();
     }
     
-    // Update mass point rotations (black holes)
+    // Update mass point rotations (GUI only - black holes)
     for (auto* mass : massPoints)
     {
         mass->updateRotation (deltaTime);
         mass->repaint();
     }
     
-    // Lock particles for thread safety
-    const juce::ScopedLock lock (particlesLock);
-    
-    // Update all particles
-    for (int i = particles.size() - 1; i >= 0; --i)
-    {
-        auto* particle = particles[i];
-        
-        // Update canvas bounds for accurate position mapping
-        particle->setCanvasBounds (getLocalBounds().toFloat());
-        
-        // Calculate gravity force from all mass points
-        juce::Point<float> totalForce (0.0f, 0.0f);
-        
-        for (auto* mass : massPoints)
-        {
-            juce::Point<float> massCenter = juce::Point<float> (
-                mass->getBounds().getCentreX(),
-                mass->getBounds().getCentreY()
-            );
-            
-            juce::Point<float> particlePos = particle->getPosition();
-            juce::Point<float> direction = massCenter - particlePos;
-            float distance = direction.getDistanceFromOrigin();
-            
-            // Avoid division by zero and singularities
-            if (distance > 5.0f)
-            {
-                // Apply mass multiplier based on size
-                float effectiveGravity = gravityStrength * mass->getMassMultiplier();
-                float forceMagnitude = effectiveGravity / (distance * distance);
-                juce::Point<float> normalizedDirection = direction / distance;
-                totalForce += normalizedDirection * forceMagnitude;
-            }
-        }
-        
-        // Apply gravity force
-        particle->applyForce (totalForce);
-        
-        // Update particle physics
-        particle->update (deltaTime);
-        
-        // Wrap around canvas boundaries
-        particle->wrapAround (getLocalBounds().toFloat());
-        
-        // Remove dead particles
-        if (particle->isDead())
-        {
-            LOG_INFO("Particle died after lifetime expired");
-            particles.remove (i);
-        }
-    }
-    
-    // Repaint to show updated particle positions
-    if (!particles.isEmpty())
+    // Repaint to show updated particle positions (particles are updated in audio thread)
+    auto* processorParticles = audioProcessor.getParticles();
+    if (!processorParticles->isEmpty())
         repaint();
 }
 
 void Canvas::drawParticles (juce::Graphics& g)
 {
+    auto* processorParticles = audioProcessor.getParticles();
+    auto& particlesLock = audioProcessor.getParticlesLock();
     const juce::ScopedLock lock (particlesLock);
     
-    for (auto* particle : particles)
+    for (auto* particle : *processorParticles)
     {
         particle->draw (g);
     }
@@ -698,7 +709,11 @@ void Canvas::drawWaveform (juce::Graphics& g)
         float maxRightInfluence = 0.0f;
         float maxCenterInfluence = 0.0f;
         
-        for (auto* particle : particles)
+        auto* processorParticles = audioProcessor.getParticles();
+        auto& particlesLock = audioProcessor.getParticlesLock();
+        const juce::ScopedLock lock (particlesLock);
+        
+        for (auto* particle : *processorParticles)
         {
             if (particle == nullptr)
                 continue;
@@ -842,3 +857,126 @@ void Canvas::filesDropped (const juce::StringArray& files, int x, int y)
     LOG_WARNING("No valid audio file in dropped files");
     repaint();
 }
+
+//==============================================================================
+// These methods are no longer used - SpawnPoint and MassPoint components render themselves
+void Canvas::drawSpawnPoints (juce::Graphics& g)
+{
+    juce::ignoreUnused (g);
+    // SpawnPoint GUI components now render themselves via their paint() method
+}
+
+//==============================================================================
+void Canvas::drawMassPoints (juce::Graphics& g)
+{
+    juce::ignoreUnused (g);
+    // MassPoint GUI components now render themselves via their paint() method
+}
+
+//==============================================================================
+// Sync GUI components with processor data
+void Canvas::syncGuiFromProcessor()
+{
+    // Clear existing GUI components (we'll recreate them from processor data)
+    spawnPoints.clear();
+    massPoints.clear();
+    
+    // Create GUI components for each mass point in processor
+    const auto& massPointsData = audioProcessor.getMassPoints();
+    for (size_t i = 0; i < massPointsData.size(); ++i)
+    {
+        const auto& mpData = massPointsData[i];
+        
+        // Create GUI component
+        auto* mass = new MassPoint();
+        addAndMakeVisible (mass);
+        mass->setCentrePosition (mpData.position.toInt());
+        
+        // Set mass multiplier to match processor data
+        // Calculate radius from massMultiplier (radius = 50 * massMultiplier)
+        int radius = static_cast<int>(50.0f * mpData.massMultiplier);
+        mass->setRadius (radius);
+        
+        // Set up callbacks to sync with processor when GUI changes
+        mass->onMassDropped = [this]() { repaint(); };
+        mass->onMassMoved = [this, mass]() 
+        { 
+            // Update processor data when GUI component moves
+            int index = massPoints.indexOf (mass);
+            if (index >= 0 && index < audioProcessor.getMassPoints().size())
+            {
+                auto center = mass->getBounds().getCentre();
+                audioProcessor.updateMassPoint (index, juce::Point<float>(center.x, center.y), mass->getMassMultiplier());
+            }
+            repaint(); 
+        };
+        mass->onDeleteRequested = [this, mass]() 
+        {
+            // Remove from both GUI and processor
+            int index = massPoints.indexOf (mass);
+            if (index >= 0)
+                audioProcessor.removeMassPoint (index);
+            massPoints.removeObject (mass);
+            repaint();
+            LOG_INFO("Deleted mass point");
+        };
+        
+        massPoints.add (mass);
+    }
+    
+    // Create GUI components for each spawn point in processor
+    const auto& spawnPointsData = audioProcessor.getSpawnPoints();
+    for (size_t i = 0; i < spawnPointsData.size(); ++i)
+    {
+        const auto& spData = spawnPointsData[i];
+        
+        // Create GUI component
+        auto* spawn = new SpawnPoint();
+        addAndMakeVisible (spawn);
+        spawn->setCentrePosition (spData.position.toInt());
+        
+        // Set momentum vector from momentumAngle (user-set direction, not visual rotation)
+        float momentum = 20.0f; // Default momentum magnitude
+        juce::Point<float> momentumVector (
+            std::cos(spData.momentumAngle) * momentum,
+            std::sin(spData.momentumAngle) * momentum
+        );
+        spawn->setMomentumVector (momentumVector);
+        
+        // Set up callbacks to sync with processor when GUI changes
+        spawn->onSpawnPointMoved = [this, spawn]() 
+        { 
+            // Update processor data when GUI component moves
+            int index = spawnPoints.indexOf (spawn);
+            if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+            {
+                auto center = spawn->getBounds().getCentre();
+                auto momentum = spawn->getMomentumVector();
+                float angle = std::atan2(momentum.y, momentum.x);
+                audioProcessor.updateSpawnPoint (index, juce::Point<float>(center.x, center.y), angle);
+            }
+            repaint(); 
+        };
+        spawn->onSelectionChanged = [this]() { repaint(); };
+        spawn->onDeleteRequested = [this, spawn]() 
+        {
+            // Remove from both GUI and processor
+            int index = spawnPoints.indexOf (spawn);
+            if (index >= 0)
+                audioProcessor.removeSpawnPoint (index);
+            spawnPoints.removeObject (spawn);
+            repaint();
+            LOG_INFO("Deleted spawn point");
+        };
+        spawn->getSpawnPointCount = [this]() 
+        {
+            return spawnPoints.size();
+        };
+        
+        spawnPoints.add (spawn);
+    }
+    
+    LOG_INFO("Synced GUI from processor: " + juce::String(massPoints.size()) + 
+             " mass points, " + juce::String(spawnPoints.size()) + " spawn points");
+}
+

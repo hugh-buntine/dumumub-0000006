@@ -7,32 +7,7 @@
 #include "Particle.h"
 #include "SpawnPoint.h"
 #include "MassPoint.h"
-
-//==============================================================================
-// Custom MIDI trigger button that sends note on/off
-class MidiTriggerButton : public juce::TextButton
-{
-public:
-    MidiTriggerButton (const juce::String& buttonName) : juce::TextButton (buttonName) {}
-    
-    std::function<void()> onNoteOn;
-    std::function<void()> onNoteOff;
-    
-protected:
-    void mouseDown (const juce::MouseEvent& event) override
-    {
-        juce::TextButton::mouseDown (event);
-        if (onNoteOn)
-            onNoteOn();
-    }
-    
-    void mouseUp (const juce::MouseEvent& event) override
-    {
-        juce::TextButton::mouseUp (event);
-        if (onNoteOff)
-            onNoteOff();
-    }
-};
+#include "Logger.h"
 
 //==============================================================================
 // Custom toggle button with 4 image states
@@ -146,9 +121,7 @@ private:
     std::unique_ptr<melatonin::Inspector> inspector;
     juce::TextButton inspectButton { "Inspect the UI" };
 
-    Canvas canvas;
-    
-    MidiTriggerButton midiTriggerButton { "MIDI Trigger" };
+    Canvas canvas { processorRef };
     
     // Image buttons
     ToggleImageButton graphicsButton;

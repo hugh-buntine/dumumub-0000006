@@ -120,59 +120,106 @@ void Particle::draw (juce::Graphics& g)
     // Calculate base alpha from lifetime (particle fades as it dies)
     float lifetimeAlpha = juce::jmax (0.0f, 1.0f - (lifeTime / maxLifeTime));
     
+    // Get edge crossfade info (for visual wraparound)
+    const float edgeFadeZone = 50.0f;
+    float distanceFromLeft = position.x - canvasBounds.getX();
+    float distanceFromRight = canvasBounds.getRight() - position.x;
+    
+    float mainAlpha = 1.0f;
+    float ghostAlpha = 0.0f;
+    juce::Point<float> ghostPosition = position;
+    bool shouldDrawGhost = false;
+    
+    // Near left edge - fade main particle, show ghost on right
+    if (distanceFromLeft < edgeFadeZone && canvasBounds.getWidth() > 0)
+    {
+        mainAlpha = distanceFromLeft / edgeFadeZone;
+        ghostAlpha = 1.0f - mainAlpha;
+        ghostPosition.x = position.x + canvasBounds.getWidth();
+        shouldDrawGhost = true;
+    }
+    // Near right edge - fade main particle, show ghost on left
+    else if (distanceFromRight < edgeFadeZone && canvasBounds.getWidth() > 0)
+    {
+        mainAlpha = distanceFromRight / edgeFadeZone;
+        ghostAlpha = 1.0f - mainAlpha;
+        ghostPosition.x = position.x - canvasBounds.getWidth();
+        shouldDrawGhost = true;
+    }
+    
     // Trail color is always off-white (#FFFFF2 = RGB 255, 255, 242)
     juce::Colour trailColor (255, 255, 242);
     
-    // Draw trail (from oldest to newest)
-    if (trail.size() > 1)
+    // Helper lambda to draw trail from a given position offset
+    auto drawTrailFrom = [&](juce::Point<float> offset, float alpha)
     {
-        for (size_t i = 0; i < trail.size() - 1; ++i)
+        if (trail.size() > 1)
         {
-            const auto& p1 = trail[i];
-            const auto& p2 = trail[i + 1];
-            
-            // Skip drawing if distance is too large (particle teleported)
-            float dx = p2.position.x - p1.position.x;
-            float dy = p2.position.y - p1.position.y;
-            float distanceSquared = dx * dx + dy * dy;
-            
-            // If distance > 100 pixels, it's a teleport - skip drawing this segment
-            if (distanceSquared > 100.0f * 100.0f)
-                continue;
-            
-            // Calculate alpha: base transparency from particle lifetime, 
-            // then fade as trail point ages
-            float trailFade = 1.0f - (p1.age / trailFadeTime);
-            float alpha = lifetimeAlpha * trailFade * 0.6f; // 0.6 makes trail dimmer than particle
-            
-            // Draw line segment with off-white color
-            g.setColour (trailColor.withAlpha (alpha));
-            g.drawLine (p1.position.x, p1.position.y, 
-                       p2.position.x, p2.position.y, 
-                       2.0f); // Line thickness
+            for (size_t i = 0; i < trail.size() - 1; ++i)
+            {
+                const auto& p1 = trail[i];
+                const auto& p2 = trail[i + 1];
+                
+                // Skip drawing if distance is too large (particle teleported)
+                float dx = p2.position.x - p1.position.x;
+                float dy = p2.position.y - p1.position.y;
+                float distanceSquared = dx * dx + dy * dy;
+                
+                // If distance > 100 pixels, it's a teleport - skip drawing this segment
+                if (distanceSquared > 100.0f * 100.0f)
+                    continue;
+                
+                // Calculate alpha: base transparency from particle lifetime and offset alpha, 
+                // then fade as trail point ages
+                float trailFade = 1.0f - (p1.age / trailFadeTime);
+                float finalAlpha = lifetimeAlpha * alpha * trailFade * 0.6f; // 0.6 makes trail dimmer than particle
+                
+                // Draw line segment with off-white color, offset by the given amount
+                g.setColour (trailColor.withAlpha (finalAlpha));
+                g.drawLine (p1.position.x + offset.x, p1.position.y + offset.y, 
+                           p2.position.x + offset.x, p2.position.y + offset.y, 
+                           2.0f); // Line thickness
+            }
         }
-    }
+    };
     
-    // Draw the particle itself using star image if available
-    if (starImage.isValid())
+    // Helper lambda to draw particle star at a given position
+    auto drawStarAt = [&](juce::Point<float> pos, float alpha)
     {
-        // Draw 15x15 star image centered on particle position with fade
-        float starSize = 15.0f;
-        g.setOpacity (lifetimeAlpha);
-        g.drawImage (starImage, 
-                    juce::Rectangle<float> (position.x - starSize / 2, 
-                                           position.y - starSize / 2, 
-                                           starSize, starSize),
-                    juce::RectanglePlacement::fillDestination);
-    }
-    else
+        float combinedAlpha = lifetimeAlpha * alpha;
+        
+        if (starImage.isValid())
+        {
+            // Draw 15x15 star image centered on position with combined fade
+            float starSize = 15.0f;
+            g.setOpacity (combinedAlpha);
+            g.drawImage (starImage, 
+                        juce::Rectangle<float> (pos.x - starSize / 2, 
+                                               pos.y - starSize / 2, 
+                                               starSize, starSize),
+                        juce::RectanglePlacement::fillDestination);
+        }
+        else
+        {
+            // Fallback to drawing a circle if star image not loaded
+            juce::Colour particleColor = activeGrains.empty()
+                ? juce::Colours::blue   // Blue when silent
+                : juce::Colours::red;   // Red while playing
+            g.setColour (particleColor.withAlpha (combinedAlpha));
+            g.fillEllipse (pos.x - radius, pos.y - radius, radius * 2, radius * 2);
+        }
+    };
+    
+    // Draw main particle and trail
+    drawTrailFrom (juce::Point<float>(0, 0), mainAlpha);
+    drawStarAt (position, mainAlpha);
+    
+    // Draw ghost particle and trail on opposite edge if crossfading
+    if (shouldDrawGhost && ghostAlpha > 0.0f)
     {
-        // Fallback to drawing a circle if star image not loaded
-        juce::Colour particleColor = activeGrains.empty()
-            ? juce::Colours::blue   // Blue when silent
-            : juce::Colours::red;   // Red while playing
-        g.setColour (particleColor.withAlpha (lifetimeAlpha));
-        g.fillEllipse (position.x - radius, position.y - radius, radius * 2, radius * 2);
+        juce::Point<float> ghostOffset (ghostPosition.x - position.x, 0);
+        drawTrailFrom (ghostOffset, ghostAlpha);
+        drawStarAt (ghostPosition, ghostAlpha);
     }
 }
 
@@ -263,7 +310,7 @@ Particle::EdgeCrossfade Particle::getEdgeCrossfade() const
         return result;
     }
     
-    const float edgeFadeZone = 20.0f; // 20px from edge starts crossfade
+    const float edgeFadeZone = 50.0f; // 50px from edge starts crossfade
     float normalizedX = (position.x - canvasBounds.getX()) / canvasBounds.getWidth();
     result.mainPan = juce::jlimit (-1.0f, 1.0f, (normalizedX * 2.0f) - 1.0f);
     
