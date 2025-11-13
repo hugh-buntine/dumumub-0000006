@@ -2,7 +2,6 @@
 
 #include "PluginProcessor.h"
 #include "BinaryData.h"
-#include "melatonin_inspector/melatonin_inspector.h"
 #include "Canvas.h"
 #include "Particle.h"
 #include "SpawnPoint.h"
@@ -118,8 +117,6 @@ private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
     PluginProcessor& processorRef;
-    std::unique_ptr<melatonin::Inspector> inspector;
-    juce::TextButton inspectButton { "Inspect the UI" };
 
     Canvas canvas { processorRef };
     

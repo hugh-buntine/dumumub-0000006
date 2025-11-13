@@ -128,19 +128,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                               BinaryData::VORTEX4HOVER_pngSize);
     MassPoint::setVortexHoverImages (vortexImage1Hover, vortexImage2Hover, vortexImage3Hover, vortexImage4Hover);
 
-    addAndMakeVisible (inspectButton);
-
-    // this chunk of code instantiates and opens the melatonin inspector
-    inspectButton.onClick = [&] {
-        if (!inspector)
-        {
-            inspector = std::make_unique<melatonin::Inspector> (*this);
-            inspector->onClose = [this]() { inspector.reset(); };
-        }
-
-        inspector->setVisible (true);
-    };
-
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
     setSize (500, 800);
@@ -397,9 +384,6 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
 
 void PluginEditor::resized()
 {
-    // layout the positions of your child components here
-    inspectButton.setBounds (getWidth() - 50, getHeight() - 50, 50, 50);
-    
     // Canvas - positioned at (50, 125) with 400x400 size
     canvas.setBounds (50, 125, 400, 400);
     
