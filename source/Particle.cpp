@@ -19,7 +19,8 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
       adsrAmplitude (0.0f),
       initialVelocityMultiplier (initialVelocity), pitchShift (pitchShift),
       currentSampleRate (0.0), samplesSinceLastGrainTrigger (0),
-      cachedTotalGrainSamples (2205)
+      cachedTotalGrainSamples (2205),
+      lastPosition (position)
 {
     // Reserve space for grains to avoid allocations during audio processing
     // With 100Hz grain frequency, we might have ~20 overlapping grains at most
@@ -125,6 +126,17 @@ void Particle::update (float deltaTime)
     // Update ADSR envelope
     updateADSR (deltaTime);
     
+    // Update wraparound smoothing timer
+    if (justWrappedAround)
+    {
+        wraparoundSmoothingTime += deltaTime;
+        if (wraparoundSmoothingTime >= wraparoundSmoothDuration)
+        {
+            justWrappedAround = false;
+            wraparoundSmoothingTime = 0.0f;
+        }
+    }
+    
     // Add current position to trail
     if (trail.empty() || position.getDistanceFrom(trail.back().position) > 2.0f)
     {
@@ -149,6 +161,9 @@ void Particle::update (float deltaTime)
         trail.end()
     );
     
+    // Store last position before updating
+    lastPosition = position;
+    
     // Update velocity based on acceleration
     velocity += acceleration * deltaTime;
     
@@ -169,6 +184,9 @@ void Particle::applyForce (const juce::Point<float>& force)
 
 void Particle::wrapAround (const juce::Rectangle<float>& bounds)
 {
+    // Simple wraparound - just teleport the position
+    // The edge fade system will handle the smooth audio transition
+    
     // Wrap horizontally
     if (position.x < bounds.getX())
         position.x = bounds.getRight();
@@ -361,29 +379,27 @@ float Particle::getPan() const
     return juce::jlimit (-1.0f, 1.0f, (normalizedX * 2.0f) - 1.0f);
 }
 
-Particle::EdgeCrossfade Particle::getEdgeCrossfade() const
+Particle::EdgeFade Particle::getEdgeFade() const
 {
-    EdgeCrossfade result;
-    result.crossfadeAmount = 0.0f;
+    EdgeFade result;
+    result.amplitude = 1.0f;
     
     if (canvasBounds.getWidth() <= 0)
     {
-        result.mainPan = 0.0f;
-        result.crossfadePan = 0.0f;
+        result.pan = 0.0f;
         return result;
     }
     
-    const float edgeFadeZone = 50.0f; // 50px from edge starts crossfade
+    const float edgeFadeZone = 50.0f; // 50px from edge starts fade
     float normalizedX = (position.x - canvasBounds.getX()) / canvasBounds.getWidth();
-    result.mainPan = juce::jlimit (-1.0f, 1.0f, (normalizedX * 2.0f) - 1.0f);
+    result.pan = juce::jlimit (-1.0f, 1.0f, (normalizedX * 2.0f) - 1.0f);
     
     // Check if near left edge (x < edgeFadeZone)
     float distanceFromLeft = position.x - canvasBounds.getX();
     if (distanceFromLeft < edgeFadeZone)
     {
-        // Fade to right side
-        result.crossfadeAmount = 1.0f - (distanceFromLeft / edgeFadeZone);
-        result.crossfadePan = 1.0f; // Right side
+        // Fade amplitude down as we approach left edge
+        result.amplitude = distanceFromLeft / edgeFadeZone;
         return result;
     }
     
@@ -391,14 +407,12 @@ Particle::EdgeCrossfade Particle::getEdgeCrossfade() const
     float distanceFromRight = canvasBounds.getRight() - position.x;
     if (distanceFromRight < edgeFadeZone)
     {
-        // Fade to left side
-        result.crossfadeAmount = 1.0f - (distanceFromRight / edgeFadeZone);
-        result.crossfadePan = -1.0f; // Left side
+        // Fade amplitude down as we approach right edge
+        result.amplitude = distanceFromRight / edgeFadeZone;
         return result;
     }
     
-    // Not near any edge
-    result.crossfadePan = result.mainPan;
+    // Not near any edge - full amplitude
     return result;
 }
 

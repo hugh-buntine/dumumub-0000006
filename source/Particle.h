@@ -81,13 +81,12 @@ public:
     // Calculate current pan and amplitude based on position
     float getPan() const; // -1.0 (left) to 1.0 (right)
     
-    // Get edge crossfade information (for smooth wraparound)
-    struct EdgeCrossfade {
-        float mainPan;           // Primary pan position
-        float crossfadePan;      // Secondary pan position (on opposite side)
-        float crossfadeAmount;   // 0.0 = no crossfade, 1.0 = 50/50 mix
+    // Get edge fade information (simple amplitude fade at boundaries)
+    struct EdgeFade {
+        float pan;              // Pan position (-1.0 to 1.0)
+        float amplitude;        // Fade multiplier: 1.0 in center, 0.0 at edges
     };
-    EdgeCrossfade getEdgeCrossfade() const;
+    EdgeFade getEdgeFade() const;
     
     float getGrainAmplitude (const Grain& grain) const; // Grain envelope with hardcoded 50% crossfade
     float getPitchShift() const { return pitchShift; } // Pitch shift multiplier for grain playback
@@ -153,6 +152,13 @@ private:
     int cachedTotalGrainSamples = 2205; // 50ms at 44.1kHz
     int cachedAttackSamples = 220; // 5ms at 44.1kHz
     int cachedReleaseSamples = 220; // 5ms at 44.1kHz
+    
+    // Wraparound smoothing to prevent clicks
+    bool justWrappedAround = false;
+    float wraparoundSmoothingTime = 0.0f;
+    static constexpr float wraparoundSmoothDuration = 0.05f; // 50ms smooth transition (increased from 20ms)
+    juce::Point<float> lastPosition;
+    float lastGrainStartSample = 0.0f; // Track grain position for smooth interpolation
     
     // Static star image shared by all particles
     static juce::Image starImage;

@@ -595,11 +595,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (samplesToRender <= 0)
                 continue;
             
-            // Get edge crossfade info for smooth wraparound panning
-            auto crossfade = particle->getEdgeCrossfade();
+            // Get edge fade info (simple amplitude fade at boundaries)
+            auto edgeFade = particle->getEdgeFade();
             
             // Get grain amplitude (includes hardcoded 50% crossfade AND particle ADSR)
             float amplitude = particle->getGrainAmplitude (grain); // 0.0 to 1.0
+            
+            // Apply edge fade (fades to 0 near boundaries)
+            amplitude *= edgeFade.amplitude;
             
             // Apply MIDI velocity
             amplitude *= particle->getInitialVelocityMultiplier();
@@ -610,25 +613,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Get pitch shift for this particle
             float pitchShift = particle->getPitchShift();
             
-            // Calculate stereo gains from main pan
-            float panAngle = (crossfade.mainPan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
+            // Calculate stereo gains from pan
+            float panAngle = (edgeFade.pan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
             float leftGain = std::cos (panAngle) * amplitude;
             float rightGain = std::sin (panAngle) * amplitude;
-            
-            // If crossfading near edge, blend with opposite side
-            float crossLeftGain = 0.0f;
-            float crossRightGain = 0.0f;
-            if (crossfade.crossfadeAmount > 0.0f)
-            {
-                float crossPanAngle = (crossfade.crossfadePan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
-                crossLeftGain = std::cos (crossPanAngle) * amplitude * crossfade.crossfadeAmount;
-                crossRightGain = std::sin (crossPanAngle) * amplitude * crossfade.crossfadeAmount;
-                
-                // Reduce main gains to maintain constant power
-                float mainAmount = 1.0f - crossfade.crossfadeAmount;
-                leftGain *= mainAmount;
-                rightGain *= mainAmount;
-            }
             
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
@@ -661,11 +649,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Linear interpolation
                 float audioSample = audioSample1 + fraction * (audioSample2 - audioSample1);
                 
-                // Write to output with panning (main + crossfade)
+                // Write to output with panning
                 if (totalNumOutputChannels >= 1)
-                    buffer.addSample (0, i, audioSample * (leftGain + crossLeftGain));
+                    buffer.addSample (0, i, audioSample * leftGain);
                 if (totalNumOutputChannels >= 2)
-                    buffer.addSample (1, i, audioSample * (rightGain + crossRightGain));
+                    buffer.addSample (1, i, audioSample * rightGain);
             }
         }
     }
