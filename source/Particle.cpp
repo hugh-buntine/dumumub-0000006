@@ -25,6 +25,13 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
     // Reserve space for grains to avoid allocations during audio processing
     // With 100Hz grain frequency, we might have ~20 overlapping grains at most
     activeGrains.reserve (32);
+    
+    // Pre-calculate Hann window lookup table for smooth grain envelopes (no cos() in audio thread!)
+    for (int i = 0; i < envelopeLUTSize; ++i)
+    {
+        float t = static_cast<float>(i) / static_cast<float>(envelopeLUTSize - 1);
+        envelopeLUT[i] = 0.5f * (1.0f - std::cos(juce::MathConstants<float>::pi * t));
+    }
 }
 
 void Particle::triggerNewGrain (int bufferLength)
@@ -423,9 +430,10 @@ Particle::EdgeFade Particle::getEdgeFade() const
 
 float Particle::getGrainAmplitude (const Grain& grain) const
 {
-    // HARDCODED 50% crossfade for all grains:
-    // - First 50% of grain: fade in from 0.0 to 1.0
-    // - Last 50% of grain: fade out from 1.0 to 0.0
+    // HARDCODED 50% crossfade for all grains with SMOOTH WINDOWING:
+    // Use pre-calculated Hann window lookup table (fast, no cos() calls!)
+    // - First 50% of grain: fade in from 0.0 to 1.0 (smooth curve)
+    // - Last 50% of grain: fade out from 1.0 to 0.0 (smooth curve)
     
     int grainPos = grain.playbackPosition;
     int halfGrain = cachedTotalGrainSamples / 2;
@@ -434,15 +442,19 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     
     if (grainPos < halfGrain)
     {
-        // First half: fade in from 0.0 to 1.0
-        grainEnvelope = static_cast<float>(grainPos) / static_cast<float>(halfGrain);
+        // First half: smooth fade in using lookup table
+        float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(halfGrain);
+        int lutIndex = static_cast<int>(normalizedPos * (envelopeLUTSize - 1));
+        grainEnvelope = envelopeLUT[lutIndex];
     }
     else
     {
-        // Second half: fade out from 1.0 to 0.0
+        // Second half: smooth fade out (reversed lookup)
         int posInSecondHalf = grainPos - halfGrain;
         int secondHalfDuration = cachedTotalGrainSamples - halfGrain;
-        grainEnvelope = 1.0f - (static_cast<float>(posInSecondHalf) / static_cast<float>(secondHalfDuration));
+        float normalizedPos = static_cast<float>(posInSecondHalf) / static_cast<float>(secondHalfDuration);
+        int lutIndex = static_cast<int>(normalizedPos * (envelopeLUTSize - 1));
+        grainEnvelope = envelopeLUT[envelopeLUTSize - 1 - lutIndex]; // Reverse for fade out
     }
     
     // Apply particle ADSR amplitude on top of grain envelope

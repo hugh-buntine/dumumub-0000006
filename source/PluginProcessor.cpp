@@ -616,17 +616,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (samplesToRender <= 0)
                 continue;
             
-            // Get grain amplitude (includes hardcoded 50% crossfade AND particle ADSR)
-            float amplitude = particle->getGrainAmplitude (grain); // 0.0 to 1.0
-            
-            // Apply edge fade (fades to 0 near boundaries)
-            amplitude *= edgeFade.amplitude;
-            
-            // Apply MIDI velocity
-            amplitude *= particle->getInitialVelocityMultiplier();
-            
-            // Apply master gain
-            amplitude *= masterGainLinear;
+            // Pre-calculate constant multipliers (applied to all samples in this grain chunk)
+            float baseAmplitude = edgeFade.amplitude * 
+                                 particle->getInitialVelocityMultiplier() * 
+                                 masterGainLinear;
             
             // Get pitch shift for this particle
             float pitchShift = particle->getPitchShift();
@@ -649,6 +642,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
+                // Calculate grain envelope amplitude at CURRENT position within grain
+                // CRITICAL: Create temporary grain with current position for envelope calculation
+                Grain tempGrain = grain;
+                tempGrain.playbackPosition = grainPosition + i;
+                float grainEnvelopeAmplitude = particle->getGrainAmplitude (tempGrain);
+                float amplitude = grainEnvelopeAmplitude * baseAmplitude;
+
                 // Linear interpolation between samples for smooth pitch shift
                 int sourceSample1 = static_cast<int>(sourcePosition);
                 int sourceSample2 = sourceSample1 + 1;

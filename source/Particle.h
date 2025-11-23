@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <array>
 
 //==============================================================================
 // ADSR envelope phases for particle lifetime control
@@ -153,6 +154,10 @@ private:
     int cachedTotalGrainSamples = 2205; // 50ms at 44.1kHz
     int cachedAttackSamples = 220; // 5ms at 44.1kHz
     int cachedReleaseSamples = 220; // 5ms at 44.1kHz
+    
+    // Grain envelope lookup table (Hann window) for performance
+    static constexpr int envelopeLUTSize = 512;
+    std::array<float, envelopeLUTSize> envelopeLUT;
     
     // Wraparound smoothing to prevent clicks
     bool justWrappedAround = false;
