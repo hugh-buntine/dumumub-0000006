@@ -861,6 +861,14 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
                  ", Sample Rate: " + juce::String(reader->sampleRate) + " Hz, " +
                  "Length: " + juce::String(reader->lengthInSamples) + " samples (" +
                  juce::String(reader->lengthInSamples / reader->sampleRate, 2) + " seconds)");
+        
+        // Clear all particles when loading new audio to prevent invalid grain positions
+        {
+            const juce::ScopedLock lock (particlesLock);
+            particles.clear();
+            activeNoteToParticles.clear();
+            LOG_INFO("Cleared all particles due to new audio file load");
+        }
     }
     else
     {
