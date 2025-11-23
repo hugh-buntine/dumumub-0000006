@@ -425,11 +425,19 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSi
         // Apply gravity force
         particle->applyForce (totalForce);
         
-        // Update particle physics
-        particle->update (deltaTime);
+        // Skip physics updates for silent particles in release phase (optimization #7)
+        // Only skip if particle is fading out AND nearly silent (not during attack/sustain!)
+        bool shouldSkipPhysics = (particle->getADSRPhase() == ADSRPhase::Release) && 
+                                  (particle->getADSRAmplitude() < 0.001f);
         
-        // Wrap around canvas boundaries
-        particle->wrapAround (canvasBounds);
+        if (!shouldSkipPhysics)
+        {
+            // Update particle physics
+            particle->update (deltaTime);
+            
+            // Wrap around canvas boundaries
+            particle->wrapAround (canvasBounds);
+        }
         
         // Remove finished particles (ADSR release complete)
         if (particle->isFinished())
@@ -586,6 +594,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         if (grains.empty())
             continue;
         
+        // Cache edge fade info ONCE per particle (optimization #5)
+        // Edge fade rarely changes within a buffer, no need to recalculate per grain
+        auto edgeFade = particle->getEdgeFade();
+        
         // Process each active grain
         for (auto& grain : grains)
         {
@@ -599,9 +611,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             
             if (samplesToRender <= 0)
                 continue;
-            
-            // Get edge fade info (simple amplitude fade at boundaries)
-            auto edgeFade = particle->getEdgeFade();
             
             // Get grain amplitude (includes hardcoded 50% crossfade AND particle ADSR)
             float amplitude = particle->getGrainAmplitude (grain); // 0.0 to 1.0
@@ -629,12 +638,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Cache buffer length for fast wrapping
             int bufferLength = audioFileBuffer.getNumSamples();
             
+            // Pre-calculate initial source position and increment (outside loop optimization)
+            float sourcePosition = grainStartSample + (grainPosition * pitchShift);
+            float sourceIncrement = pitchShift;
+            
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
-                // Calculate source position with pitch shift (float for interpolation)
-                float sourcePosition = grainStartSample + ((grainPosition + i) * pitchShift);
-                
                 // Linear interpolation between samples for smooth pitch shift
                 int sourceSample1 = static_cast<int>(sourcePosition);
                 int sourceSample2 = sourceSample1 + 1;
@@ -674,6 +684,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     buffer.addSample (0, i, audioSample * leftGain);
                 if (totalNumOutputChannels >= 2)
                     buffer.addSample (1, i, audioSample * rightGain);
+                
+                // Increment source position (faster than recalculating each iteration)
+                sourcePosition += sourceIncrement;
             }
         }
     }

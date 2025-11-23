@@ -46,6 +46,7 @@ public:
     float getLifeTime() const { return lifeTime; }
     bool isFinished() const { return adsrPhase == ADSRPhase::Finished; }
     int getMidiNoteNumber() const { return midiNoteNumber; }
+    ADSRPhase getADSRPhase() const { return adsrPhase; }
     
     // ADSR control
     void updateADSR (float deltaTime);
