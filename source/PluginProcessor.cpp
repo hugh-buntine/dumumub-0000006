@@ -601,6 +601,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Process each active grain
         for (auto& grain : grains)
         {
+            // Optimization #8: Skip inactive grains (marked-and-skip pattern)
+            if (!grain.active)
+                continue;
+            
             int grainStartSample = grain.startSample;
             int grainPosition = grain.playbackPosition;
             int totalGrainSamples = particle->getTotalGrainSamples();

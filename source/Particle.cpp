@@ -51,12 +51,17 @@ void Particle::updateGrains (int numSamples)
             grain.active = false;
     }
     
-    // Remove finished grains
-    activeGrains.erase (
-        std::remove_if (activeGrains.begin(), activeGrains.end(),
-                       [](const Grain& g) { return !g.active; }),
-        activeGrains.end()
-    );
+    // Optimization #8: Skip expensive erase operations
+    // Instead of removing finished grains, we mark them inactive and skip during processing
+    // Periodically clean up when vector gets too large (avoid unbounded growth)
+    if (activeGrains.size() > 20) // Only cleanup if we have many grains
+    {
+        activeGrains.erase (
+            std::remove_if (activeGrains.begin(), activeGrains.end(),
+                           [](const Grain& g) { return !g.active; }),
+            activeGrains.end()
+        );
+    }
 }
 
 Particle::~Particle()
