@@ -525,16 +525,38 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             handleNoteOff (midiNote);
         }
     }
+
+    // EARLY EXIT CHECKS - avoid all work if no particles exist
+    // Lock particles to check if empty
+    {
+        const juce::ScopedLock lock (particlesLock);
+        
+        // If no particles, skip physics update and all audio processing (major CPU save)
+        if (particles.isEmpty())
+        {
+            // Reset time tracking when idle to avoid huge delta on next particle spawn
+            lastUpdateTime = 0.0;
+            return;
+        }
+    }
     
     // Update particle simulation (physics, gravity, lifetime)
+    // Only called when particles exist (optimization)
     double currentTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
     updateParticleSimulation (currentTime, buffer.getNumSamples());
 
-    // Check if we have audio file loaded
+    // Check if we have audio file loaded (needed for grain synthesis)
     if (!hasAudioFileLoaded() || audioFileBuffer.getNumSamples() == 0)
         return;
     
-    // Get parameter values
+    // Lock particles for grain processing
+    const juce::ScopedLock lock (particlesLock);
+    
+    // Double-check particles still exist after potential removal in physics update
+    if (particles.isEmpty())
+        return;
+    
+    // ONLY load parameters if we have particles to process (CPU optimization)
     float grainSizeMs = apvts.getRawParameterValue("grainSize")->load();
     float grainFreq = apvts.getRawParameterValue("grainFreq")->load();
     float masterGainDb = apvts.getRawParameterValue("masterGain")->load();
@@ -542,13 +564,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     
     // Note: attack and release are now ADSR parameters, not grain envelope parameters
     // Grain crossfade is hardcoded to 50% in Particle::getGrainAmplitude()
-    
-    // Lock particles for grain processing (already locked in updateParticleSimulation, but released)
-    const juce::ScopedLock lock (particlesLock);
-    
-    // Early exit if no particles (CPU optimization - avoid unnecessary work)
-    if (particles.isEmpty())
-        return;
     
     // Process each particle's grains
     for (auto* particle : particles)
