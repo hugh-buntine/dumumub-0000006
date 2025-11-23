@@ -428,14 +428,14 @@ Particle::EdgeFade Particle::getEdgeFade() const
     return result;
 }
 
-float Particle::getGrainAmplitude (const Grain& grain) const
+float Particle::getGrainAmplitude (int grainPlaybackPosition) const
 {
     // HARDCODED 50% crossfade for all grains with SMOOTH WINDOWING:
     // Use pre-calculated Hann window lookup table (fast, no cos() calls!)
     // - First 50% of grain: fade in from 0.0 to 1.0 (smooth curve)
     // - Last 50% of grain: fade out from 1.0 to 0.0 (smooth curve)
     
-    int grainPos = grain.playbackPosition;
+    int grainPos = grainPlaybackPosition;
     int halfGrain = cachedTotalGrainSamples / 2;
     
     float grainEnvelope;

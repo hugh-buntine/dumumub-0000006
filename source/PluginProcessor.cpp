@@ -277,7 +277,6 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
         }
         
         particles.remove (0);
-        LOG_INFO("Removed oldest particle to make room (max: " + juce::String(maxParticles) + ")");
         
         // Decrement all particle indices in the mapping since we removed index 0
         for (auto& pair : activeNoteToParticles)
@@ -302,8 +301,6 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
 
 void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchShift)
 {
-    LOG_INFO("handleNoteOn: note=" + juce::String(noteNumber) + " velocity=" + juce::String(velocity));
-    
     if (spawnPoints.size() == 0)
     {
         LOG_WARNING("No spawn points available for note-on");
@@ -328,8 +325,7 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     
     // Apply randomness to emission direction
     float angleVariance = randomness * juce::MathConstants<float>::pi; // 0 to PI radians variance
-    juce::Random random;
-    float randomOffset = random.nextFloat() * angleVariance * 2.0f - angleVariance; // -variance to +variance
+    float randomOffset = randomGenerator.nextFloat() * angleVariance * 2.0f - angleVariance; // -variance to +variance
     float finalAngle = baseAngle + randomOffset;
     
     float momentumMagnitude = 50.0f;
@@ -341,12 +337,10 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     
     // Spawn particle with MIDI parameters and ADSR
     spawnParticle (spawnPos, initialVelocity, velocity, pitchShift, noteNumber, attackTime, releaseTime);
-    LOG_INFO("Particle spawned from note-on! Total particles: " + juce::String(particles.size()));
 }
 
 void PluginProcessor::handleNoteOff (int noteNumber)
 {
-    LOG_INFO("handleNoteOff: note=" + juce::String(noteNumber));
     
     const juce::ScopedLock lock (particlesLock);
     
@@ -354,7 +348,6 @@ void PluginProcessor::handleNoteOff (int noteNumber)
     if (activeNoteToParticles.count(noteNumber) > 0)
     {
         auto& particleIndices = activeNoteToParticles[noteNumber];
-        LOG_INFO("Triggering release for " + juce::String(particleIndices.size()) + " particles");
         
         for (int idx : particleIndices)
         {
@@ -386,13 +379,9 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSi
     // Lock particles for update
     const juce::ScopedLock lock (particlesLock);
     
-    // Update spawn point visual rotations (animation only, not used for particle spawning)
-    for (auto& spawn : spawnPoints)
-    {
-        spawn.visualRotation += deltaTime * 0.5f; // Rotate at 0.5 rad/s
-        if (spawn.visualRotation > juce::MathConstants<float>::twoPi)
-            spawn.visualRotation -= juce::MathConstants<float>::twoPi;
-    }
+    // Early exit if no particles (CPU optimization - skip entire physics simulation)
+    if (particles.isEmpty())
+        return;
     
     // Update all particles
     for (int i = particles.size() - 1; i >= 0; --i)
@@ -506,26 +495,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         const juce::ScopedLock lock (midiLock);
         if (!pendingMidiMessages.isEmpty())
         {
-            LOG_INFO("Merging " + juce::String(pendingMidiMessages.getNumEvents()) + " pending MIDI messages into buffer");
             midiMessages.addEvents (pendingMidiMessages, 0, buffer.getNumSamples(), 0);
             pendingMidiMessages.clear();
         }
     }
 
-    LOG_INFO("processBlock: About to process " + juce::String(midiMessages.getNumEvents()) + " MIDI messages, canvas=" + juce::String(canvas != nullptr ? "valid" : "null"));
-
     // Process MIDI messages to spawn particles or trigger release
     for (const auto metadata : midiMessages)
     {
-        LOG_INFO("Processing MIDI message in loop");
         auto message = metadata.getMessage();
         
         if (message.isNoteOn())
         {
             int midiNote = message.getNoteNumber();
             float midiVelocity = message.getVelocity() / 127.0f; // Normalize to 0.0-1.0
-            
-            LOG_INFO("MIDI Note On received: note=" + juce::String(midiNote) + " velocity=" + juce::String(midiVelocity));
             
             // Calculate pitch shift from MIDI note (C3 = 60 = no shift)
             float semitoneOffset = midiNote - 60;
@@ -537,8 +520,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else if (message.isNoteOff())
         {
             int midiNote = message.getNoteNumber();
-            
-            LOG_INFO("MIDI Note Off received: note=" + juce::String(midiNote));
             
             // Trigger release phase for all particles associated with this note
             handleNoteOff (midiNote);
@@ -565,12 +546,17 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Lock particles for grain processing (already locked in updateParticleSimulation, but released)
     const juce::ScopedLock lock (particlesLock);
     
+    // Early exit if no particles (CPU optimization - avoid unnecessary work)
     if (particles.isEmpty())
         return;
     
     // Process each particle's grains
     for (auto* particle : particles)
     {
+        // Skip finished particles early (they'll be removed in physics update)
+        if (particle->isFinished())
+            continue;
+        
         // Update sample rate if needed (cached internally)
         particle->updateSampleRate (getSampleRate());
         
@@ -642,11 +628,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
-                // Calculate grain envelope amplitude at CURRENT position within grain
-                // CRITICAL: Create temporary grain with current position for envelope calculation
-                Grain tempGrain = grain;
-                tempGrain.playbackPosition = grainPosition + i;
-                float grainEnvelopeAmplitude = particle->getGrainAmplitude (tempGrain);
+                // Calculate grain envelope amplitude efficiently using lookup table
+                int currentGrainPos = grainPosition + i;
+                float grainEnvelopeAmplitude = particle->getGrainAmplitude (currentGrainPos);
                 float amplitude = grainEnvelopeAmplitude * baseAmplitude;
 
                 // Linear interpolation between samples for smooth pitch shift

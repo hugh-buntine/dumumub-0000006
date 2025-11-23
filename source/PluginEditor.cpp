@@ -77,6 +77,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (graphicsButton);
     graphicsButton.setImages (graphicsButtonUnpressed, graphicsButtonUnpressedHover,
                              graphicsButtonPressed, graphicsButtonPressedHover);
+    graphicsButton.setToggleState (true, juce::dontSendNotification);  // Default ON
+    graphicsButton.onClick = [this]() {
+        // Update canvas graphics enabled state based on button state
+        canvas.setGraphicsEnabled (graphicsButton.getToggleState());
+    };
     
     // Setup Break CPU button
     addAndMakeVisible (breakCpuButton);

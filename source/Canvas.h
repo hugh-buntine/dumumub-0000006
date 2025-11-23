@@ -60,6 +60,10 @@ public:
     // Set break CPU mode (unlimited particles/masses/spawn points)
     void setBreakCpuMode (bool enabled);
     
+    // Set graphics mode (enables/disables particle rendering, rotations, waveform glow)
+    void setGraphicsEnabled (bool enabled) { graphicsEnabled = enabled; }
+    bool isGraphicsEnabled() const { return graphicsEnabled; }
+    
     // Access to particles - now deprecated, particles live in processor
     // These are kept for backward compatibility during transition
     juce::OwnedArray<Particle>* getParticles();
@@ -70,6 +74,7 @@ private:
     // Reference to audio processor (owns the particle simulation)
     PluginProcessor& audioProcessor;
 
+    bool graphicsEnabled = true; // Graphics mode enabled by default
     bool breakCpuMode = false;
     int maxSpawnPoints = 8;
     int maxMassPoints = 4;

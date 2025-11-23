@@ -90,7 +90,7 @@ public:
     };
     EdgeFade getEdgeFade() const;
     
-    float getGrainAmplitude (const Grain& grain) const; // Grain envelope with hardcoded 50% crossfade
+    float getGrainAmplitude (int grainPlaybackPosition) const; // Grain envelope with hardcoded 50% crossfade
     float getPitchShift() const { return pitchShift; } // Pitch shift multiplier for grain playback
     float getInitialVelocityMultiplier() const { return initialVelocityMultiplier; } // MIDI velocity (0.0 to 1.0)
     

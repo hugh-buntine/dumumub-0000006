@@ -128,6 +128,9 @@ private:
     std::vector<MassPointData> massPoints;
     std::vector<SpawnPointData> spawnPoints;
     
+    // Random number generator for particle spawning
+    juce::Random randomGenerator;
+    
     // Simulation parameters
     float gravityStrength = 100.0f;
     juce::Rectangle<float> canvasBounds {0, 0, 800, 600};
