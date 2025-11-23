@@ -581,6 +581,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Get all active grains for this particle
         auto& grains = particle->getActiveGrains();
         
+        // Skip particles with no active grains (silent - no audio output)
+        // IMPORTANT: Check AFTER triggering/updating grains so new particles can start!
+        if (grains.empty())
+            continue;
+        
         // Process each active grain
         for (auto& grain : grains)
         {
@@ -613,10 +618,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Get pitch shift for this particle
             float pitchShift = particle->getPitchShift();
             
-            // Calculate stereo gains from pan
+            // Calculate stereo pan gains ONCE per grain (cache trig functions)
             float panAngle = (edgeFade.pan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
-            float leftGain = std::cos (panAngle) * amplitude;
-            float rightGain = std::sin (panAngle) * amplitude;
+            float leftPanGain = std::cos (panAngle);
+            float rightPanGain = std::sin (panAngle);
+            
+            // Pre-calculate channel averaging multiplier (faster than division)
+            float channelMult = 1.0f / static_cast<float>(audioFileBuffer.getNumChannels());
+            
+            // Cache buffer length for fast wrapping
+            int bufferLength = audioFileBuffer.getNumSamples();
             
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
@@ -629,11 +640,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int sourceSample2 = sourceSample1 + 1;
                 float fraction = sourcePosition - sourceSample1;
                 
-                // Wrap samples if needed
-                sourceSample1 = sourceSample1 % audioFileBuffer.getNumSamples();
-                sourceSample2 = sourceSample2 % audioFileBuffer.getNumSamples();
-                if (sourceSample1 < 0) sourceSample1 += audioFileBuffer.getNumSamples();
-                if (sourceSample2 < 0) sourceSample2 += audioFileBuffer.getNumSamples();
+                // Fast wrapping with branches instead of modulo (branch prediction makes this faster)
+                if (sourceSample1 >= bufferLength)
+                    sourceSample1 -= bufferLength;
+                else if (sourceSample1 < 0)
+                    sourceSample1 += bufferLength;
+                
+                if (sourceSample2 >= bufferLength)
+                    sourceSample2 -= bufferLength;
+                else if (sourceSample2 < 0)
+                    sourceSample2 += bufferLength;
                 
                 // Get audio samples (mono or averaged if stereo source)
                 float audioSample1 = 0.0f;
@@ -643,11 +659,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     audioSample1 += audioFileBuffer.getSample (channel, sourceSample1);
                     audioSample2 += audioFileBuffer.getSample (channel, sourceSample2);
                 }
-                audioSample1 /= audioFileBuffer.getNumChannels();
-                audioSample2 /= audioFileBuffer.getNumChannels();
+                audioSample1 *= channelMult;  // Multiply instead of divide (faster!)
+                audioSample2 *= channelMult;
                 
                 // Linear interpolation
                 float audioSample = audioSample1 + fraction * (audioSample2 - audioSample1);
+                
+                // Calculate final stereo gains (apply amplitude modulation to cached pan gains)
+                float leftGain = leftPanGain * amplitude;
+                float rightGain = rightPanGain * amplitude;
                 
                 // Write to output with panning
                 if (totalNumOutputChannels >= 1)

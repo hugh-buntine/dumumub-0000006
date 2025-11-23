@@ -450,8 +450,8 @@ int Particle::calculateGrainStartPosition (int bufferLength)
         return 0;
     
     // Calculate grain start based on current Y position
-    // Y=0 (top) = start of sample (0.0), Y=height (bottom) = end of sample (1.0)
-    float normalizedY = position.y / canvasBounds.getHeight();
+    // Y=0 (top) = end of sample (1.0), Y=height (bottom) = start of sample (0.0)
+    float normalizedY = 1.0f - (position.y / canvasBounds.getHeight());
     normalizedY = juce::jlimit (0.0f, 1.0f, normalizedY);
     
     int startSample = static_cast<int>(normalizedY * bufferLength);
