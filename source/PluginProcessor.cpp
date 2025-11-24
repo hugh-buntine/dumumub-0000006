@@ -20,13 +20,18 @@ PluginProcessor::PluginProcessor()
     Logger::getInstance().initialize("dumumub-0000006.log", "dumumub-0000006 Plugin Logger");
     LOG_INFO("PluginProcessor constructed");
     
-    // Create default mass point at center (will be positioned correctly when canvas size is known)
+    // Set default canvas bounds (standard canvas size, matches GUI)
+    // This ensures MIDI works even before GUI opens
+    canvasBounds = juce::Rectangle<float>(0, 0, 400, 400);
+    
+    // Create default mass point at center of canvas
     massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });
     
     // Create default spawn point at center with angle pointing right
     spawnPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 0.0f });
     
-    LOG_INFO("Created default mass point and spawn point");
+    LOG_INFO("Created default mass point and spawn point with canvas bounds: " + 
+             juce::String(canvasBounds.getWidth()) + "x" + juce::String(canvasBounds.getHeight()));
 }
 
 PluginProcessor::~PluginProcessor()
@@ -311,6 +316,14 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     float attackTime = apvts.getRawParameterValue("attack")->load();
     float releaseTime = apvts.getRawParameterValue("release")->load();
     float randomness = apvts.getRawParameterValue("randomness")->load() / 100.0f; // 0.0-1.0
+    
+    LOG_INFO("Note On: note=" + juce::String(noteNumber) + 
+             " velocity=" + juce::String(velocity, 2) + 
+             " attack=" + juce::String(attackTime, 3) + "s" +
+             " release=" + juce::String(releaseTime, 3) + "s" +
+             " randomness=" + juce::String(randomness * 100.0f, 1) + "%" +
+             " spawnPoints=" + juce::String(spawnPoints.size()) +
+             " canvasBounds=" + juce::String(canvasBounds.getWidth()) + "x" + juce::String(canvasBounds.getHeight()));
     
     // Use round-robin spawn point selection
     static int nextSpawnIndex = 0;

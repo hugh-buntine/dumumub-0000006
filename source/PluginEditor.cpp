@@ -195,18 +195,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     releaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "release", releaseSlider);
     
-    // Lifespan
+    // Randomness (controls emission direction variance)
     addAndMakeVisible (lifespanSlider);
     lifespanSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     lifespanSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     lifespanSlider.setLookAndFeel (&lifespanLookAndFeel);
     lifespanAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        apvts, "lifespan", lifespanSlider);
-    
-    // Update canvas lifespan when parameter changes
-    lifespanSlider.onValueChange = [this]() {
-        canvas.setParticleLifespan (lifespanSlider.getValue());
-    };
+        apvts, "randomness", lifespanSlider);
     
     // Grain Size
     addAndMakeVisible (grainSizeSlider);
@@ -415,7 +410,7 @@ void PluginEditor::resized()
     attackSlider.setBounds (leftColumnX, startY - 7, sliderWidth, sliderHeight);
     releaseSlider.setBounds (rightColumnX, startY - 7, sliderWidth, sliderHeight);
     
-    // Row 2: Lifespan (left), Grain Size (right) - moved up 1px
+    // Row 2: Randomness (left), Grain Size (right) - moved up 1px
     lifespanSlider.setBounds (leftColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
     grainSizeSlider.setBounds (rightColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
     
