@@ -68,6 +68,10 @@ void Particle::updateADSR (float deltaTime)
 {
     adsrTime += deltaTime;
     
+    // Fixed decay and sustain values for transient character
+    const float fixedDecayTime = 0.05f;      // 50ms decay for punchy transient
+    const float fixedSustainLevel = 0.6f;    // Sustain at 60% amplitude
+    
     switch (adsrPhase)
     {
         case ADSRPhase::Attack:
@@ -77,23 +81,42 @@ void Particle::updateADSR (float deltaTime)
             else
                 adsrAmplitude = 1.0f; // Instant attack
             
-            // Move to Held phase when attack complete
+            // Move to Decay phase when attack complete
             if (adsrAmplitude >= 1.0f)
             {
-                adsrPhase = ADSRPhase::Held;
+                adsrPhase = ADSRPhase::Decay;
                 adsrTime = 0.0f;
             }
             break;
             
-        case ADSRPhase::Held:
-            // Stay at full amplitude while MIDI key is held
-            adsrAmplitude = 1.0f;
+        case ADSRPhase::Decay:
+            // Linear ramp from 1.0 to sustain level over fixed decay time
+            if (fixedDecayTime > 0.0f)
+            {
+                float decayProgress = adsrTime / fixedDecayTime;
+                adsrAmplitude = juce::jmax (fixedSustainLevel, 1.0f - (decayProgress * (1.0f - fixedSustainLevel)));
+            }
+            else
+                adsrAmplitude = fixedSustainLevel;
+            
+            // Move to Sustain phase when decay complete
+            if (adsrTime >= fixedDecayTime)
+            {
+                adsrPhase = ADSRPhase::Sustain;
+                adsrAmplitude = fixedSustainLevel;
+                adsrTime = 0.0f;
+            }
+            break;
+            
+        case ADSRPhase::Sustain:
+            // Stay at sustain level while MIDI key is held
+            adsrAmplitude = fixedSustainLevel;
             break;
             
         case ADSRPhase::Release:
-            // Linear ramp from 1.0 to 0.0 over releaseTime
+            // Linear ramp from sustain level to 0.0 over releaseTime
             if (releaseTime > 0.0f)
-                adsrAmplitude = juce::jmax (0.0f, 1.0f - (adsrTime / releaseTime));
+                adsrAmplitude = juce::jmax (0.0f, fixedSustainLevel - (adsrTime / releaseTime) * fixedSustainLevel);
             else
                 adsrAmplitude = 0.0f; // Instant release
             
@@ -112,8 +135,8 @@ void Particle::updateADSR (float deltaTime)
 
 void Particle::triggerRelease()
 {
-    // Transition from Held to Release phase
-    if (adsrPhase == ADSRPhase::Attack || adsrPhase == ADSRPhase::Held)
+    // Transition from Attack, Decay, or Sustain to Release phase
+    if (adsrPhase == ADSRPhase::Attack || adsrPhase == ADSRPhase::Decay || adsrPhase == ADSRPhase::Sustain)
     {
         adsrPhase = ADSRPhase::Release;
         adsrTime = 0.0f;

@@ -9,8 +9,9 @@
 enum class ADSRPhase
 {
     Attack,     // Fading in from 0 to 1
-    Held,       // MIDI key is held, amplitude stays at 1
-    Release,    // MIDI key released, fading from 1 to 0
+    Decay,      // Dropping from 1 to sustain level
+    Sustain,    // Held at sustain level while MIDI key is held
+    Release,    // MIDI key released, fading from sustain to 0
     Finished    // Release complete, particle should be removed
 };
 
