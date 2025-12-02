@@ -94,7 +94,16 @@ public:
     
     // Gravity and canvas settings
     void setGravityStrength (float strength) { gravityStrength = strength; }
-    void setCanvasBounds (juce::Rectangle<float> bounds) { canvasBounds = bounds; }
+    void setCanvasBounds (juce::Rectangle<float> bounds) 
+    { 
+        const juce::ScopedLock lock (canvasBoundsLock);
+        canvasBounds = bounds; 
+    }
+    juce::Rectangle<float> getCanvasBounds() const 
+    { 
+        const juce::ScopedLock lock (canvasBoundsLock);
+        return canvasBounds; 
+    }
     void setParticleLifespan (float lifespan) { particleLifespan = lifespan; }
     void setMaxParticles (int max) { maxParticles = max; }
 
@@ -122,8 +131,9 @@ private:
     juce::OwnedArray<Particle> particles;
     juce::CriticalSection particlesLock; // Protects particle array
     
-    // MIDI note to particle mapping for ADSR control
-    std::map<int, std::vector<int>> activeNoteToParticles; // Maps MIDI note number -> particle indices
+    // OPTIMIZATION: Use particle IDs instead of indices to avoid O(n²) updates
+    // Maps MIDI note number -> set of particle IDs
+    std::map<int, std::vector<uint64_t>> activeNoteToParticleIDs;
     
     std::vector<MassPointData> massPoints;
     std::vector<SpawnPointData> spawnPoints;
@@ -134,6 +144,7 @@ private:
     // Simulation parameters
     float gravityStrength = 100.0f;
     juce::Rectangle<float> canvasBounds {0, 0, 800, 600};
+    mutable juce::CriticalSection canvasBoundsLock; // THREAD-SAFETY: Protects canvas bounds
     float particleLifespan = 30.0f; // Legacy parameter - no longer used with ADSR
     int maxParticles = 8; // Default limit (can be changed via setMaxParticles)
     

@@ -49,6 +49,10 @@ public:
     int getMidiNoteNumber() const { return midiNoteNumber; }
     ADSRPhase getADSRPhase() const { return adsrPhase; }
     
+    // OPTIMIZATION: Unique ID for efficient note-to-particle mapping (avoids index updates)
+    int getUniqueID() const { return uniqueID; }
+    static int getNextUniqueID() { return nextUniqueID++; }
+    
     // ADSR control
     void updateADSR (float deltaTime);
     void triggerRelease();
@@ -105,6 +109,9 @@ public:
     
     // Draw the particle
     void draw (juce::Graphics& g);
+    
+    // OPTIMIZATION: Update trail in GUI thread only (not audio thread)
+    void updateTrailForRendering (float deltaTime);
 
 private:
     juce::Point<float> position;
@@ -112,6 +119,10 @@ private:
     juce::Point<float> acceleration;
     float lifeTime = 0.0f;
     float radius = 3.0f;
+    
+    // OPTIMIZATION: Unique ID for efficient particle tracking
+    int uniqueID;
+    static int nextUniqueID;
     
     // ADSR envelope for particle lifetime
     int midiNoteNumber = -1;           // Which MIDI note spawned this particle
@@ -157,7 +168,9 @@ private:
     
     // Grain envelope lookup table (Hann window) for performance
     static constexpr int envelopeLUTSize = 512;
-    std::array<float, envelopeLUTSize> envelopeLUT;
+    static std::array<float, envelopeLUTSize> sharedEnvelopeLUT;
+    static bool envelopeLUTInitialized;
+    static void initializeEnvelopeLUT();
     
     // Wraparound smoothing to prevent clicks
     bool justWrappedAround = false;

@@ -1,8 +1,25 @@
 #include "Particle.h"
 #include "Logger.h"
 
-// Initialize static member
+// Initialize static members
 juce::Image Particle::starImage;
+int Particle::nextUniqueID = 0;
+std::array<float, Particle::envelopeLUTSize> Particle::sharedEnvelopeLUT;
+bool Particle::envelopeLUTInitialized = false;
+
+void Particle::initializeEnvelopeLUT()
+{
+    if (!envelopeLUTInitialized)
+    {
+        // Pre-calculate Hann window lookup table ONCE for all particles
+        for (int i = 0; i < envelopeLUTSize; ++i)
+        {
+            float t = static_cast<float>(i) / static_cast<float>(envelopeLUTSize - 1);
+            sharedEnvelopeLUT[i] = 0.5f * (1.0f - std::cos(juce::MathConstants<float>::pi * t));
+        }
+        envelopeLUTInitialized = true;
+    }
+}
 
 //==============================================================================
 Particle::Particle (juce::Point<float> position, juce::Point<float> velocity, 
@@ -10,7 +27,8 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
                     float attackTime, float releaseTime,
                     float initialVelocity, float pitchShift)
     : position (position), velocity (velocity), canvasBounds (canvasBounds),
-      lifeTime (0.0f), 
+      lifeTime (0.0f),
+      uniqueID (getNextUniqueID()),
       midiNoteNumber (midiNoteNumber),
       adsrPhase (ADSRPhase::Attack),
       adsrTime (0.0f),
@@ -22,20 +40,32 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
       cachedTotalGrainSamples (2205),
       lastPosition (position)
 {
+    // Initialize shared envelope LUT on first particle creation (thread-safe)
+    initializeEnvelopeLUT();
+    
     // Reserve space for grains to avoid allocations during audio processing
     // With 100Hz grain frequency, we might have ~20 overlapping grains at most
     activeGrains.reserve (32);
-    
-    // Pre-calculate Hann window lookup table for smooth grain envelopes (no cos() in audio thread!)
-    for (int i = 0; i < envelopeLUTSize; ++i)
-    {
-        float t = static_cast<float>(i) / static_cast<float>(envelopeLUTSize - 1);
-        envelopeLUT[i] = 0.5f * (1.0f - std::cos(juce::MathConstants<float>::pi * t));
-    }
 }
 
 void Particle::triggerNewGrain (int bufferLength)
 {
+    // OPTIMIZATION: Limit maximum grains per particle to prevent CPU spikes
+    // With very low notes, grains play slower and can accumulate
+    const int MAX_GRAINS_PER_PARTICLE = 32;
+    
+    // Count active grains (skip inactive ones)
+    int activeCount = 0;
+    for (const auto& grain : activeGrains)
+    {
+        if (grain.active)
+            activeCount++;
+    }
+    
+    // Don't spawn new grain if at limit
+    if (activeCount >= MAX_GRAINS_PER_PARTICLE)
+        return;
+    
     int startSample = calculateGrainStartPosition (bufferLength);
     activeGrains.push_back (Grain (startSample));
     
@@ -149,6 +179,28 @@ void Particle::update (float deltaTime)
         }
     }
     
+    // OPTIMIZATION: Trail updates moved to GUI thread (updateTrailForRendering)
+    // No allocations in audio thread!
+    
+    // Store last position before updating
+    lastPosition = position;
+    
+    // Update velocity based on acceleration
+    velocity += acceleration * deltaTime;
+    
+    // Update position based on velocity
+    position += velocity * deltaTime;
+    
+    // Reset acceleration
+    acceleration = juce::Point<float> (0.0f, 0.0f);
+    
+    // Update lifetime
+    lifeTime += deltaTime;
+}
+
+void Particle::updateTrailForRendering (float deltaTime)
+{
+    // OPTIMIZATION: This is called from GUI thread only, safe to allocate
     // Add current position to trail
     if (trail.empty() || position.getDistanceFrom(trail.back().position) > 2.0f)
     {
@@ -172,21 +224,6 @@ void Particle::update (float deltaTime)
                        [](const TrailPoint& p) { return p.age > trailFadeTime; }),
         trail.end()
     );
-    
-    // Store last position before updating
-    lastPosition = position;
-    
-    // Update velocity based on acceleration
-    velocity += acceleration * deltaTime;
-    
-    // Update position based on velocity
-    position += velocity * deltaTime;
-    
-    // Reset acceleration
-    acceleration = juce::Point<float> (0.0f, 0.0f);
-    
-    // Update lifetime
-    lifeTime += deltaTime;
 }
 
 void Particle::applyForce (const juce::Point<float>& force)
@@ -431,7 +468,7 @@ Particle::EdgeFade Particle::getEdgeFade() const
 float Particle::getGrainAmplitude (int grainPlaybackPosition) const
 {
     // HARDCODED 50% crossfade for all grains with SMOOTH WINDOWING:
-    // Use pre-calculated Hann window lookup table (fast, no cos() calls!)
+    // Use pre-calculated shared Hann window lookup table (fast, no cos() calls!)
     // - First 50% of grain: fade in from 0.0 to 1.0 (smooth curve)
     // - Last 50% of grain: fade out from 1.0 to 0.0 (smooth curve)
     
@@ -442,10 +479,10 @@ float Particle::getGrainAmplitude (int grainPlaybackPosition) const
     
     if (grainPos < halfGrain)
     {
-        // First half: smooth fade in using lookup table
+        // First half: smooth fade in using shared lookup table
         float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(halfGrain);
         int lutIndex = static_cast<int>(normalizedPos * (envelopeLUTSize - 1));
-        grainEnvelope = envelopeLUT[lutIndex];
+        grainEnvelope = sharedEnvelopeLUT[lutIndex];
     }
     else
     {
@@ -454,7 +491,7 @@ float Particle::getGrainAmplitude (int grainPlaybackPosition) const
         int secondHalfDuration = cachedTotalGrainSamples - halfGrain;
         float normalizedPos = static_cast<float>(posInSecondHalf) / static_cast<float>(secondHalfDuration);
         int lutIndex = static_cast<int>(normalizedPos * (envelopeLUTSize - 1));
-        grainEnvelope = envelopeLUT[envelopeLUTSize - 1 - lutIndex]; // Reverse for fade out
+        grainEnvelope = sharedEnvelopeLUT[envelopeLUTSize - 1 - lutIndex]; // Reverse for fade out
     }
     
     // Apply particle ADSR amplitude on top of grain envelope

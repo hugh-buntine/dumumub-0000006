@@ -264,41 +264,41 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
 {
     const juce::ScopedLock lock (particlesLock);
     
+    // THREAD-SAFETY: Get canvas bounds safely
+    juce::Rectangle<float> currentCanvasBounds;
+    {
+        const juce::ScopedLock boundsLock (canvasBoundsLock);
+        currentCanvasBounds = canvasBounds;
+    }
+    
     // Check particle limit and remove oldest if at max
     if (particles.size() >= maxParticles)
     {
-        // Remove oldest particle (index 0) and clean up note mapping
+        // Remove oldest particle (index 0) and clean up note mapping by ID
         auto* oldestParticle = particles[0];
         int oldNote = oldestParticle->getMidiNoteNumber();
+        int oldID = oldestParticle->getUniqueID();
         
-        // Remove from note mapping
-        if (activeNoteToParticles.count(oldNote) > 0)
+        // Remove from note mapping using ID (no index updates needed!)
+        if (activeNoteToParticleIDs.count(oldNote) > 0)
         {
-            auto& particleIndices = activeNoteToParticles[oldNote];
-            particleIndices.erase(std::remove(particleIndices.begin(), particleIndices.end(), 0), 
-                                 particleIndices.end());
-            if (particleIndices.empty())
-                activeNoteToParticles.erase(oldNote);
+            auto& particleIDs = activeNoteToParticleIDs[oldNote];
+            particleIDs.erase(std::remove(particleIDs.begin(), particleIDs.end(), oldID), 
+                             particleIDs.end());
+            if (particleIDs.empty())
+                activeNoteToParticleIDs.erase(oldNote);
         }
         
         particles.remove (0);
-        
-        // Decrement all particle indices in the mapping since we removed index 0
-        for (auto& pair : activeNoteToParticles)
-        {
-            for (auto& idx : pair.second)
-                if (idx > 0) idx--;
-        }
     }
     
     // Create new particle with ADSR parameters
-    auto* particle = new Particle (position, velocity, canvasBounds, midiNoteNumber,
+    auto* particle = new Particle (position, velocity, currentCanvasBounds, midiNoteNumber,
                                    attackTime, releaseTime, initialVelocity, pitchShift);
-    int newIndex = particles.size();
     particles.add (particle);
     
-    // Add to note mapping for release handling
-    activeNoteToParticles[midiNoteNumber].push_back(newIndex);
+    // Add to note mapping using particle ID (not index!)
+    activeNoteToParticleIDs[midiNoteNumber].push_back(particle->getUniqueID());
 }
 
 //==============================================================================
@@ -357,16 +357,21 @@ void PluginProcessor::handleNoteOff (int noteNumber)
     
     const juce::ScopedLock lock (particlesLock);
     
-    // Find all particles associated with this MIDI note and trigger release
-    if (activeNoteToParticles.count(noteNumber) > 0)
+    // Find all particles associated with this MIDI note by ID and trigger release
+    if (activeNoteToParticleIDs.count(noteNumber) > 0)
     {
-        auto& particleIndices = activeNoteToParticles[noteNumber];
+        auto& particleIDs = activeNoteToParticleIDs[noteNumber];
         
-        for (int idx : particleIndices)
+        for (int particleID : particleIDs)
         {
-            if (idx >= 0 && idx < particles.size())
+            // Find particle by ID
+            for (auto* particle : particles)
             {
-                particles[idx]->triggerRelease();
+                if (particle->getUniqueID() == particleID)
+                {
+                    particle->triggerRelease();
+                    break;
+                }
             }
         }
         
@@ -396,13 +401,20 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSi
     if (particles.isEmpty())
         return;
     
+    // THREAD-SAFETY: Get canvas bounds safely
+    juce::Rectangle<float> currentCanvasBounds;
+    {
+        const juce::ScopedLock boundsLock (canvasBoundsLock);
+        currentCanvasBounds = canvasBounds;
+    }
+    
     // Update all particles
     for (int i = particles.size() - 1; i >= 0; --i)
     {
         auto* particle = particles[i];
         
         // Update canvas bounds
-        particle->setCanvasBounds (canvasBounds);
+        particle->setCanvasBounds (currentCanvasBounds);
         
         // Calculate gravity force from all mass points
         juce::Point<float> totalForce (0.0f, 0.0f);
@@ -438,32 +450,27 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSi
             particle->update (deltaTime);
             
             // Wrap around canvas boundaries
-            particle->wrapAround (canvasBounds);
+            particle->wrapAround (currentCanvasBounds);
         }
         
         // Remove finished particles (ADSR release complete)
         if (particle->isFinished())
         {
             int noteNumber = particle->getMidiNoteNumber();
+            int particleID = particle->getUniqueID();
             
-            // Clean up note mapping
-            if (activeNoteToParticles.count(noteNumber) > 0)
+            // Clean up note mapping using ID (no index updates needed!)
+            if (activeNoteToParticleIDs.count(noteNumber) > 0)
             {
-                auto& particleIndices = activeNoteToParticles[noteNumber];
-                particleIndices.erase(std::remove(particleIndices.begin(), particleIndices.end(), i), 
-                                     particleIndices.end());
-                if (particleIndices.empty())
-                    activeNoteToParticles.erase(noteNumber);
+                auto& particleIDs = activeNoteToParticleIDs[noteNumber];
+                particleIDs.erase(std::remove(particleIDs.begin(), particleIDs.end(), particleID), 
+                                 particleIDs.end());
+                if (particleIDs.empty())
+                    activeNoteToParticleIDs.erase(noteNumber);
             }
             
             particles.remove (i);
-            
-            // Decrement all particle indices greater than i in the mapping
-            for (auto& pair : activeNoteToParticles)
-            {
-                for (auto& idx : pair.second)
-                    if (idx > i) idx--;
-            }
+            // No index updates needed! IDs remain stable
         }
     }
 }
@@ -526,6 +533,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Calculate pitch shift from MIDI note (C3 = 60 = no shift)
             float semitoneOffset = midiNote - 60;
             float pitchShift = std::pow (2.0f, semitoneOffset / 12.0f);
+            
+            // OPTIMIZATION: Clamp pitch shift to prevent extreme CPU usage with very low/high notes
+            // ±2 octaves is reasonable range (0.25x to 4.0x playback speed)
+            pitchShift = juce::jlimit (0.25f, 4.0f, pitchShift);
             
             // Spawn particle with ADSR control
             handleNoteOn (midiNote, midiVelocity, pitchShift);
@@ -591,8 +602,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Update grain parameters (attack/release ignored - kept for API compatibility)
         particle->setGrainParameters (grainSizeMs, 0.0f, 0.0f);
         
-        // Check if we should trigger a new grain based on frequency
-        if (particle->shouldTriggerNewGrain (getSampleRate(), grainFreq))
+        // OPTIMIZATION: Scale grain frequency based on pitch shift
+        // Low notes (slow playback) need LESS frequent grains to prevent overlap
+        // High notes (fast playback) can handle MORE frequent grains
+        float pitchShift = particle->getPitchShift();
+        float adjustedGrainFreq = grainFreq / std::abs(pitchShift);
+        
+        // Check if we should trigger a new grain based on adjusted frequency
+        if (particle->shouldTriggerNewGrain (getSampleRate(), adjustedGrainFreq))
         {
             particle->triggerNewGrain (audioFileBuffer.getNumSamples());
         }
@@ -666,16 +683,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int sourceSample2 = sourceSample1 + 1;
                 float fraction = sourcePosition - sourceSample1;
                 
-                // Fast wrapping with branches instead of modulo (branch prediction makes this faster)
-                if (sourceSample1 >= bufferLength)
-                    sourceSample1 -= bufferLength;
-                else if (sourceSample1 < 0)
-                    sourceSample1 += bufferLength;
-                
-                if (sourceSample2 >= bufferLength)
-                    sourceSample2 -= bufferLength;
-                else if (sourceSample2 < 0)
-                    sourceSample2 += bufferLength;
+                // FIXED: Proper modulo wrapping for extreme pitch shifts (handles multiple wraps)
+                // Previous code only wrapped once, causing issues with very low/high notes
+                sourceSample1 = ((sourceSample1 % bufferLength) + bufferLength) % bufferLength;
+                sourceSample2 = ((sourceSample2 % bufferLength) + bufferLength) % bufferLength;
                 
                 // Get audio samples (mono or averaged if stereo source)
                 float audioSample1 = 0.0f;
@@ -878,7 +889,7 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
         {
             const juce::ScopedLock lock (particlesLock);
             particles.clear();
-            activeNoteToParticles.clear();
+            activeNoteToParticleIDs.clear();
             LOG_INFO("Cleared all particles due to new audio file load");
         }
     }
