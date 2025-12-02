@@ -181,6 +181,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     attackSlider.setLookAndFeel (&attackLookAndFeel);
     attackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "attack", attackSlider);
+    attackSlider.onValueChange = [this]() { attackSlider.repaint(); };
+    attackSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        activeSliderName = "ATTACK";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Release
     addAndMakeVisible (releaseSlider);
@@ -189,6 +196,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     releaseSlider.setLookAndFeel (&releaseLookAndFeel);
     releaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "release", releaseSlider);
+    releaseSlider.onValueChange = [this]() { releaseSlider.repaint(); };
+    releaseSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        activeSliderName = "RELEASE";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Lifespan
     addAndMakeVisible (lifespanSlider);
@@ -201,6 +215,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Update canvas lifespan when parameter changes
     lifespanSlider.onValueChange = [this]() {
         canvas.setParticleLifespan (lifespanSlider.getValue());
+        lifespanSlider.repaint();
+    };
+    lifespanSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        activeSliderName = "LIFESPAN";
+        activeSliderValue = value;
+        repaint();
     };
     
     // Grain Size
@@ -210,6 +231,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     grainSizeSlider.setLookAndFeel (&grainSizeLookAndFeel);
     grainSizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "grainSize", grainSizeSlider);
+    grainSizeSlider.onValueChange = [this]() { grainSizeSlider.repaint(); };
+    grainSizeSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        activeSliderName = "GRAIN SIZE";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Grain Frequency
     addAndMakeVisible (grainFreqSlider);
@@ -218,6 +246,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     grainFreqSlider.setLookAndFeel (&grainFreqLookAndFeel);
     grainFreqAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "grainFreq", grainFreqSlider);
+    grainFreqSlider.onValueChange = [this]() { grainFreqSlider.repaint(); };
+    grainFreqSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        activeSliderName = "GRAIN FREQ";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Master Gain
     addAndMakeVisible (masterGainSlider);
@@ -226,6 +261,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     masterGainSlider.setLookAndFeel (&masterGainLookAndFeel);
     masterGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "masterGain", masterGainSlider);
+    masterGainSlider.onValueChange = [this]() { masterGainSlider.repaint(); };
+    masterGainSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        activeSliderName = "MASTER GAIN";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Check if audio file was already loaded (from restored state)
     if (processorRef.hasAudioFileLoaded())
@@ -379,6 +421,32 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
         
         g.drawText (text, juce::Rectangle<float>(textX, textY, textWidth, 20.0f), 
                    juce::Justification::centredRight, true);
+    }
+    
+    // Draw slider value in center of canvas when dragging
+    if (showingSliderValue && customTypeface != nullptr)
+    {
+        // Format value based on range
+        juce::String valueText;
+        if (activeSliderValue >= 100.0)
+            valueText = juce::String (static_cast<int>(activeSliderValue));
+        else if (activeSliderValue >= 10.0)
+            valueText = juce::String (activeSliderValue, 1);
+        else
+            valueText = juce::String (activeSliderValue, 2);
+        
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.4f)); // Slightly more opaque than particle count
+        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (80.0f)); // Way bigger font
+        g.setFont (font);
+        
+        // Draw in center of canvas
+        auto canvasBounds = canvas.getBounds();
+        auto centerX = canvasBounds.getCentreX();
+        auto centerY = canvasBounds.getCentreY();
+        
+        g.drawText (valueText, 
+                   juce::Rectangle<float>(centerX - 200.0f, centerY - 40.0f, 400.0f, 80.0f), 
+                   juce::Justification::centred, true);
     }
 }
 

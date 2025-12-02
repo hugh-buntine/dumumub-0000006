@@ -99,6 +99,37 @@ private:
 };
 
 //==============================================================================
+// Custom Slider that notifies parent when dragging
+class SliderWithTooltip : public juce::Slider
+{
+public:
+    SliderWithTooltip() = default;
+    
+    std::function<void(bool, double)> onDragStateChanged;
+    
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseDown (e);
+        if (onDragStateChanged)
+            onDragStateChanged (true, getValue());
+    }
+    
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseDrag (e);
+        if (onDragStateChanged)
+            onDragStateChanged (true, getValue());
+    }
+    
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseUp (e);
+        if (onDragStateChanged)
+            onDragStateChanged (false, getValue());
+    }
+};
+
+//==============================================================================
 class PluginEditor : public juce::AudioProcessorEditor,
                      private juce::Timer
 {
@@ -128,17 +159,17 @@ private:
     juce::Label particleCountLabel;
     
     // Parameter controls
-    juce::Slider grainSizeSlider;
+    SliderWithTooltip grainSizeSlider;
     juce::Label grainSizeLabel;
-    juce::Slider grainFreqSlider;
+    SliderWithTooltip grainFreqSlider;
     juce::Label grainFreqLabel;
-    juce::Slider attackSlider;
+    SliderWithTooltip attackSlider;
     juce::Label attackLabel;
-    juce::Slider releaseSlider;
+    SliderWithTooltip releaseSlider;
     juce::Label releaseLabel;
-    juce::Slider lifespanSlider;
+    SliderWithTooltip lifespanSlider;
     juce::Label lifespanLabel;
-    juce::Slider masterGainSlider;
+    SliderWithTooltip masterGainSlider;
     juce::Label masterGainLabel;
     
     // Attachments
@@ -177,6 +208,11 @@ private:
     CustomSliderLookAndFeel grainSizeLookAndFeel;
     CustomSliderLookAndFeel grainFreqLookAndFeel;
     CustomSliderLookAndFeel masterGainLookAndFeel;
+    
+    // Slider value display tracking
+    bool showingSliderValue = false;
+    juce::String activeSliderName;
+    double activeSliderValue = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
