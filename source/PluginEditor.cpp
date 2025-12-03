@@ -184,6 +184,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     attackSlider.onValueChange = [this]() { attackSlider.repaint(); };
     attackSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
         activeSliderName = "ATTACK";
         activeSliderValue = value;
         repaint();
@@ -199,6 +200,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     releaseSlider.onValueChange = [this]() { releaseSlider.repaint(); };
     releaseSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
         activeSliderName = "RELEASE";
         activeSliderValue = value;
         repaint();
@@ -218,6 +220,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     };
     lifespanSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
         activeSliderName = "SUSTAIN";
         activeSliderValue = value * 100.0; // Display as percentage
         repaint();
@@ -447,6 +450,88 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
                    juce::Rectangle<float>(centerX - 200.0f, centerY - 40.0f, 400.0f, 80.0f), 
                    juce::Justification::centred, true);
     }
+    
+    // Draw ADSR curve only when Attack, Release, or Sustain sliders are being dragged
+    if (showingADSRCurve)
+        drawADSRCurve (g);
+}
+
+void PluginEditor::drawADSRCurve (juce::Graphics& g)
+{
+    // Get current ADSR parameter values
+    auto attack = attackSlider.getValue();
+    auto sustain = lifespanSlider.getValue(); // Already 0.0-1.0 from parameter
+    auto release = releaseSlider.getValue();
+    constexpr float decay = 0.2f; // Fixed decay time
+    
+    // Define drawing area in top-left corner of canvas
+    auto canvasBounds = canvas.getBounds();
+    float curveX = canvasBounds.getX() + 15.0f; // 15px from left edge
+    float curveY = canvasBounds.getY() + 15.0f; // 15px from top
+    float curveWidth = 120.0f;
+    float curveHeight = 80.0f;
+    
+    // Draw semi-transparent background
+    g.setColour (juce::Colour (0x00, 0x00, 0x00).withAlpha (0.3f));
+    g.fillRoundedRectangle (curveX - 5, curveY - 5, curveWidth + 10, curveHeight + 10, 4.0f);
+    
+    // Calculate time scaling
+    float totalTime = attack + decay + 0.5f + release; // +0.5s for sustain display
+    float timeScale = curveWidth / totalTime;
+    
+    // Build the path for ADSR curve
+    juce::Path adsrPath;
+    
+    // Start at bottom left (silence)
+    float startX = curveX;
+    float baseY = curveY + curveHeight;
+    adsrPath.startNewSubPath (startX, baseY);
+    
+    // Attack phase - exponential curve (x^2)
+    int attackSteps = 20;
+    for (int i = 1; i <= attackSteps; ++i)
+    {
+        float t = i / static_cast<float>(attackSteps);
+        float normalized = t * t; // Exponential attack
+        float x = startX + (t * attack * timeScale);
+        float y = baseY - (normalized * curveHeight);
+        adsrPath.lineTo (x, y);
+    }
+    
+    // Decay phase - inverse exponential curve down to sustain level
+    float decayStartX = startX + (attack * timeScale);
+    int decaySteps = 15;
+    for (int i = 1; i <= decaySteps; ++i)
+    {
+        float t = i / static_cast<float>(decaySteps);
+        float invExp = 1.0f - std::pow (1.0f - t, 3.0f); // Inverse exponential
+        float level = 1.0f - (invExp * (1.0f - sustain)); // From 1.0 down to sustain
+        float x = decayStartX + (t * decay * timeScale);
+        float y = baseY - (level * curveHeight);
+        adsrPath.lineTo (x, y);
+    }
+    
+    // Sustain phase - flat line at sustain level
+    float sustainStartX = decayStartX + (decay * timeScale);
+    float sustainEndX = sustainStartX + (0.5f * timeScale);
+    float sustainY = baseY - (sustain * curveHeight);
+    adsrPath.lineTo (sustainEndX, sustainY);
+    
+    // Release phase - inverse exponential curve down to silence
+    int releaseSteps = 20;
+    for (int i = 1; i <= releaseSteps; ++i)
+    {
+        float t = i / static_cast<float>(releaseSteps);
+        float invExp = 1.0f - std::pow (1.0f - t, 4.0f); // Inverse exponential (fast at first, slower at end)
+        float level = sustain - (invExp * sustain); // From sustain down to 0
+        float x = sustainEndX + (t * release * timeScale);
+        float y = baseY - (level * curveHeight);
+        adsrPath.lineTo (x, y);
+    }
+    
+    // Draw the ADSR curve
+    g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.6f)); // #FFFFF2 at 60% opacity
+    g.strokePath (adsrPath, juce::PathStrokeType (1.5f));
 }
 
 void PluginEditor::resized()

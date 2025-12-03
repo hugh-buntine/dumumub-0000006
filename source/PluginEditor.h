@@ -143,6 +143,7 @@ public:
     void timerCallback() override;
     
     void paintOverChildren (juce::Graphics& g) override;
+    void drawADSRCurve (juce::Graphics& g);
 
 private:
     // This reference is provided as a quick way for your editor to
@@ -213,6 +214,9 @@ private:
     bool showingSliderValue = false;
     juce::String activeSliderName;
     double activeSliderValue = 0.0;
+    
+    // ADSR curve display tracking
+    bool showingADSRCurve = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
