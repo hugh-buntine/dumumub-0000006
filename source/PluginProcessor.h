@@ -87,10 +87,10 @@ public:
     void removeSpawnPoint (int index);
     const std::vector<SpawnPointData>& getSpawnPoints() const { return spawnPoints; }
     
-    // Particle spawning (called from GUI or MIDI) - now requires MIDI note and ADSR times
+    // Particle spawning (called from GUI or MIDI) - now requires MIDI note and ADSR parameters
     void spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
                        float initialVelocity, float pitchShift, int midiNoteNumber,
-                       float attackTime, float releaseTime);
+                       float attackTime, float sustainLevel, float releaseTime);
     
     // Gravity and canvas settings
     void setGravityStrength (float strength) { gravityStrength = strength; }

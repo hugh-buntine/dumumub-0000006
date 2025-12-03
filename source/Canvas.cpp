@@ -580,8 +580,8 @@ void Canvas::spawnParticle()
     juce::Point<float> initialVelocity = spawn->getMomentumVector() * 2.0f; // Scale up for visibility
     
     // Spawn particle in processor with manual spawn parameters
-    // Manual spawns use MIDI note -1, default attack/release (0.01s, 0.5s), velocity 1.0, pitch 1.0
-    audioProcessor.spawnParticle (spawnPos, initialVelocity, 1.0f, 1.0f, -1, 0.01f, 0.5f);
+    // Manual spawns use MIDI note -1, default attack/decay/release (0.01s, 0.1s, 0.5s), velocity 1.0, pitch 1.0
+    audioProcessor.spawnParticle (spawnPos, initialVelocity, 1.0f, 1.0f, -1, 0.01f, 0.1f, 0.5f);
     
     LOG_INFO("Spawned particle #" + juce::String(processorParticles->size()) + 
              " at (" + juce::String(spawnPos.x) + ", " + juce::String(spawnPos.y) + 
@@ -626,12 +626,14 @@ void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
     
     // Get current ADSR parameters from processor
     auto* attack = audioProcessor.getAPVTS().getRawParameterValue ("attack");
+    auto* decay = audioProcessor.getAPVTS().getRawParameterValue ("decay");
     auto* release = audioProcessor.getAPVTS().getRawParameterValue ("release");
     float attackTime = attack ? attack->load() : 0.01f;
+    float decayTime = decay ? decay->load() : 0.1f;
     float releaseTime = release ? release->load() : 0.5f;
     
     // Spawn particle in processor with MIDI parameters
-    audioProcessor.spawnParticle (spawnPos, initialVelocity, midiVelocity, pitchShift, midiNote, attackTime, releaseTime);
+    audioProcessor.spawnParticle (spawnPos, initialVelocity, midiVelocity, pitchShift, midiNote, attackTime, decayTime, releaseTime);
     
     LOG_INFO("Spawned MIDI particle #" + juce::String(processorParticles->size()) + 
              " - Note: " + juce::String(midiNote) + 

@@ -204,23 +204,22 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Lifespan
+    // Lifespan (now Sustain Level)
     addAndMakeVisible (lifespanSlider);
     lifespanSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     lifespanSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     lifespanSlider.setLookAndFeel (&lifespanLookAndFeel);
     lifespanAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        apvts, "lifespan", lifespanSlider);
+        apvts, "sustain", lifespanSlider);
     
-    // Update canvas lifespan when parameter changes
+    // Update display when parameter changes
     lifespanSlider.onValueChange = [this]() {
-        canvas.setParticleLifespan (lifespanSlider.getValue());
         lifespanSlider.repaint();
     };
     lifespanSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
-        activeSliderName = "LIFESPAN";
-        activeSliderValue = value;
+        activeSliderName = "SUSTAIN";
+        activeSliderValue = value * 100.0; // Display as percentage
         repaint();
     };
     

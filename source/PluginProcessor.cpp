@@ -78,11 +78,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         }
     ));
     
-    // Release Time (0.001s - 10.0s) - Now controls particle ADSR release
+    // Release Time (0.001s - 5.0s) - Now controls particle ADSR release
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "release",
         "Release",
-        juce::NormalisableRange<float> (0.001f, 10.0f, 0.001f, 0.3f),
+        juce::NormalisableRange<float> (0.001f, 5.0f, 0.001f, 0.3f),
         0.5f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
@@ -94,15 +94,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         }
     ));
     
-    // Randomness (0% - 100%) - Controls emission direction variance (replaces lifespan)
+    // Sustain Level (0.0 - 1.0) - Controls envelope sustain amplitude
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        "randomness",
-        "Randomness",
-        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
-        0.0f,
+        "sustain",
+        "Sustain",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f),
+        0.7f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
-        [](float value, int) { return juce::String (value, 1) + " %"; }
+        [](float value, int) { return juce::String (static_cast<int>(value * 100.0f)) + " %"; }
     ));
     
     // Master Gain (-60dB - 0dB)
@@ -255,7 +255,7 @@ void PluginProcessor::removeSpawnPoint (int index)
 
 void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
                                      float initialVelocity, float pitchShift, int midiNoteNumber,
-                                     float attackTime, float releaseTime)
+                                     float attackTime, float sustainLevel, float releaseTime)
 {
     const juce::ScopedLock lock (particlesLock);
     
@@ -289,7 +289,7 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
     
     // Create new particle with ADSR parameters
     auto* particle = new Particle (position, velocity, canvasBounds, midiNoteNumber,
-                                   attackTime, releaseTime, initialVelocity, pitchShift);
+                                   attackTime, sustainLevel, releaseTime, initialVelocity, pitchShift);
     int newIndex = particles.size();
     particles.add (particle);
     
@@ -312,8 +312,8 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     
     // Get ADSR parameters
     float attackTime = apvts.getRawParameterValue("attack")->load();
+    float sustainLevel = apvts.getRawParameterValue("sustain")->load();
     float releaseTime = apvts.getRawParameterValue("release")->load();
-    float randomness = apvts.getRawParameterValue("randomness")->load() / 100.0f; // 0.0-1.0
     
     // Use round-robin spawn point selection
     static int nextSpawnIndex = 0;
@@ -323,14 +323,8 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     auto& spawn = spawnPoints[spawnIndex];
     juce::Point<float> spawnPos = spawn.position;
     
-    // Get base momentum from spawn point's momentum angle
-    float baseAngle = spawn.momentumAngle;
-    
-    // Apply randomness to emission direction
-    float angleVariance = randomness * juce::MathConstants<float>::pi; // 0 to PI radians variance
-    juce::Random random;
-    float randomOffset = random.nextFloat() * angleVariance * 2.0f - angleVariance; // -variance to +variance
-    float finalAngle = baseAngle + randomOffset;
+    // Use exact momentum angle from spawn point (no randomness)
+    float finalAngle = spawn.momentumAngle;
     
     float momentumMagnitude = 50.0f;
     juce::Point<float> initialVelocity (
@@ -340,7 +334,7 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     initialVelocity *= 2.0f; // Scale up for visibility
     
     // Spawn particle with MIDI parameters and ADSR
-    spawnParticle (spawnPos, initialVelocity, velocity, pitchShift, noteNumber, attackTime, releaseTime);
+    spawnParticle (spawnPos, initialVelocity, velocity, pitchShift, noteNumber, attackTime, sustainLevel, releaseTime);
     LOG_INFO("Particle spawned from note-on! Total particles: " + juce::String(particles.size()));
 }
 

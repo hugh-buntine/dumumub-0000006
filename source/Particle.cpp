@@ -7,7 +7,7 @@ juce::Image Particle::starImage;
 //==============================================================================
 Particle::Particle (juce::Point<float> position, juce::Point<float> velocity, 
                     const juce::Rectangle<float>& canvasBounds, int midiNoteNumber,
-                    float attackTime, float releaseTime,
+                    float attackTime, float sustainLevel, float releaseTime,
                     float initialVelocity, float pitchShift)
     : position (position), velocity (velocity), canvasBounds (canvasBounds),
       lifeTime (0.0f), 
@@ -15,6 +15,7 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
       adsrPhase (ADSRPhase::Attack),
       adsrTime (0.0f),
       attackTime (attackTime),
+      sustainLevel (sustainLevel),
       releaseTime (releaseTime),
       adsrAmplitude (0.0f),
       initialVelocityMultiplier (initialVelocity), pitchShift (pitchShift),
@@ -68,16 +69,16 @@ void Particle::updateADSR (float deltaTime)
 {
     adsrTime += deltaTime;
     
-    // Fixed decay and sustain values for transient character
-    const float fixedDecayTime = 0.05f;      // 50ms decay for punchy transient
-    const float fixedSustainLevel = 0.6f;    // Sustain at 60% amplitude
-    
     switch (adsrPhase)
     {
         case ADSRPhase::Attack:
-            // Linear ramp from 0.0 to 1.0 over attackTime
+            // Exponential ramp from 0.0 to 1.0 over attackTime (feels more natural)
             if (attackTime > 0.0f)
-                adsrAmplitude = juce::jmin (1.0f, adsrTime / attackTime);
+            {
+                float linearProgress = juce::jmin (1.0f, adsrTime / attackTime);
+                // Apply exponential curve: y = x^2 (slow start, quick finish)
+                adsrAmplitude = linearProgress * linearProgress;
+            }
             else
                 adsrAmplitude = 1.0f; // Instant attack
             
@@ -90,33 +91,42 @@ void Particle::updateADSR (float deltaTime)
             break;
             
         case ADSRPhase::Decay:
-            // Linear ramp from 1.0 to sustain level over fixed decay time
-            if (fixedDecayTime > 0.0f)
+            // Exponential decay from 1.0 to sustain level (quick drop, slow tail)
+            if (decayTime > 0.0f)
             {
-                float decayProgress = adsrTime / fixedDecayTime;
-                adsrAmplitude = juce::jmax (fixedSustainLevel, 1.0f - (decayProgress * (1.0f - fixedSustainLevel)));
+                float linearProgress = juce::jmin (1.0f, adsrTime / decayTime);
+                // Apply inverse exponential: y = 1 - (1-x)^3 (quick drop initially)
+                float curve = 1.0f - std::pow (1.0f - linearProgress, 3.0f);
+                adsrAmplitude = 1.0f - (curve * (1.0f - sustainLevel));
+                adsrAmplitude = juce::jmax (sustainLevel, adsrAmplitude);
             }
             else
-                adsrAmplitude = fixedSustainLevel;
+                adsrAmplitude = sustainLevel;
             
             // Move to Sustain phase when decay complete
-            if (adsrTime >= fixedDecayTime)
+            if (adsrTime >= decayTime)
             {
                 adsrPhase = ADSRPhase::Sustain;
-                adsrAmplitude = fixedSustainLevel;
+                adsrAmplitude = sustainLevel;
                 adsrTime = 0.0f;
             }
             break;
             
         case ADSRPhase::Sustain:
             // Stay at sustain level while MIDI key is held
-            adsrAmplitude = fixedSustainLevel;
+            adsrAmplitude = sustainLevel;
             break;
             
         case ADSRPhase::Release:
-            // Linear ramp from sustain level to 0.0 over releaseTime
+            // Exponential release from sustain level to 0.0 (smooth fade)
             if (releaseTime > 0.0f)
-                adsrAmplitude = juce::jmax (0.0f, fixedSustainLevel - (adsrTime / releaseTime) * fixedSustainLevel);
+            {
+                float linearProgress = juce::jmin (1.0f, adsrTime / releaseTime);
+                // Apply exponential decay: y = (1-x)^4 (smooth, natural fade)
+                float curve = std::pow (1.0f - linearProgress, 4.0f);
+                adsrAmplitude = sustainLevel * curve;
+                adsrAmplitude = juce::jmax (0.0f, adsrAmplitude);
+            }
             else
                 adsrAmplitude = 0.0f; // Instant release
             
