@@ -464,16 +464,12 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     auto release = releaseSlider.getValue();
     constexpr float decay = 0.2f; // Fixed decay time
     
-    // Define drawing area in top-left corner of canvas
+    // Use full canvas bounds for drawing area
     auto canvasBounds = canvas.getBounds();
-    float curveX = canvasBounds.getX() + 15.0f; // 15px from left edge
-    float curveY = canvasBounds.getY() + 15.0f; // 15px from top
-    float curveWidth = 120.0f;
-    float curveHeight = 80.0f;
-    
-    // Draw semi-transparent background
-    g.setColour (juce::Colour (0x00, 0x00, 0x00).withAlpha (0.3f));
-    g.fillRoundedRectangle (curveX - 5, curveY - 5, curveWidth + 10, curveHeight + 10, 4.0f);
+    float curveX = canvasBounds.getX();
+    float curveY = canvasBounds.getY();
+    float curveWidth = canvasBounds.getWidth();
+    float curveHeight = canvasBounds.getHeight();
     
     // Calculate time scaling
     float totalTime = attack + decay + 0.5f + release; // +0.5s for sustain display
@@ -530,7 +526,7 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     }
     
     // Draw the ADSR curve
-    g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.6f)); // #FFFFF2 at 60% opacity
+    g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.3f)); // #FFFFF2 at 30% opacity
     g.strokePath (adsrPath, juce::PathStrokeType (1.5f));
 }
 
