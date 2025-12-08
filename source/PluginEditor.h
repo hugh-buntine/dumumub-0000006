@@ -144,6 +144,7 @@ public:
     
     void paintOverChildren (juce::Graphics& g) override;
     void drawADSRCurve (juce::Graphics& g);
+    void drawGrainSizeWaveform (juce::Graphics& g);
 
 private:
     // This reference is provided as a quick way for your editor to
@@ -217,6 +218,9 @@ private:
     
     // ADSR curve display tracking
     bool showingADSRCurve = false;
+    
+    // Grain size waveform display tracking
+    bool showingGrainSizeWaveform = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

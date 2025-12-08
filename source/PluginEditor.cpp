@@ -236,6 +236,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     grainSizeSlider.onValueChange = [this]() { grainSizeSlider.repaint(); };
     grainSizeSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
+        showingGrainSizeWaveform = isDragging;
         activeSliderName = "GRAIN SIZE";
         activeSliderValue = value;
         repaint();
@@ -454,6 +455,10 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
     // Draw ADSR curve only when Attack, Release, or Sustain sliders are being dragged
     if (showingADSRCurve)
         drawADSRCurve (g);
+    
+    // Draw grain size waveform when Grain Size slider is being dragged
+    if (showingGrainSizeWaveform)
+        drawGrainSizeWaveform (g);
 }
 
 void PluginEditor::drawADSRCurve (juce::Graphics& g)
@@ -541,6 +546,78 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     // Draw outline on top (very transparent)
     g.setColour (colour.withAlpha (0.15f));
     g.strokePath (adsrPath, juce::PathStrokeType (1.5f));
+}
+
+void PluginEditor::drawGrainSizeWaveform (juce::Graphics& g)
+{
+    // Check if audio is loaded
+    const auto* audioBuffer = processorRef.getAudioBuffer();
+    if (audioBuffer == nullptr || audioBuffer->getNumSamples() == 0)
+        return;
+    
+    // Get grain size in milliseconds and convert to samples
+    auto grainSizeMs = grainSizeSlider.getValue();
+    auto sampleRate = processorRef.getSampleRate();
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0; // Fallback
+    
+    int grainSizeSamples = static_cast<int>((grainSizeMs / 1000.0) * sampleRate);
+    grainSizeSamples = juce::jlimit (1, audioBuffer->getNumSamples(), grainSizeSamples);
+    
+    // Use canvas bounds for drawing area
+    auto canvasBounds = canvas.getBounds();
+    float canvasWidth = canvasBounds.getWidth();
+    float canvasHeight = canvasBounds.getHeight();
+    float canvasX = canvasBounds.getX();
+    float canvasY = canvasBounds.getY();
+    
+    // Draw waveform horizontally across the canvas (left to right)
+    // Sample from the middle of the audio buffer for the grain size duration
+    int startSample = (audioBuffer->getNumSamples() - grainSizeSamples) / 2;
+    startSample = juce::jlimit (0, audioBuffer->getNumSamples() - grainSizeSamples, startSample);
+    
+    juce::Path waveformPath;
+    bool pathStarted = false;
+    
+    int numPoints = 200; // Number of points to sample for smooth curve
+    float xStep = canvasWidth / static_cast<float>(numPoints);
+    
+    for (int i = 0; i < numPoints; ++i)
+    {
+        // Map i to sample index within the grain size, starting from middle
+        float t = i / static_cast<float>(numPoints - 1);
+        int sampleIndex = startSample + static_cast<int>(t * grainSizeSamples);
+        sampleIndex = juce::jlimit (0, audioBuffer->getNumSamples() - 1, sampleIndex);
+        
+        // Get average magnitude across all channels
+        float magnitude = 0.0f;
+        for (int channel = 0; channel < audioBuffer->getNumChannels(); ++channel)
+        {
+            magnitude += audioBuffer->getSample (channel, sampleIndex);
+        }
+        magnitude /= audioBuffer->getNumChannels();
+        
+        // Scale magnitude to canvas height (centered vertically)
+        float x = canvasX + (i * xStep);
+        float y = canvasY + (canvasHeight * 0.5f) - (magnitude * canvasHeight * 0.3f);
+        
+        if (!pathStarted)
+        {
+            waveformPath.startNewSubPath (x, y);
+            pathStarted = true;
+        }
+        else
+        {
+            waveformPath.lineTo (x, y);
+        }
+    }
+    
+    // Draw the waveform with gradient fill (similar to ADSR style)
+    auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
+    
+    // Draw outline
+    g.setColour (colour.withAlpha (0.15f));
+    g.strokePath (waveformPath, juce::PathStrokeType (1.5f));
 }
 
 void PluginEditor::resized()
