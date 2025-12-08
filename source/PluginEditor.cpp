@@ -464,12 +464,12 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     auto release = releaseSlider.getValue();
     constexpr float decay = 0.2f; // Fixed decay time
     
-    // Use full canvas bounds for drawing area
+    // Use bottom two-thirds of canvas for drawing area
     auto canvasBounds = canvas.getBounds();
     float curveX = canvasBounds.getX();
-    float curveY = canvasBounds.getY();
+    float curveY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f); // Start 1/3 down
     float curveWidth = canvasBounds.getWidth();
-    float curveHeight = canvasBounds.getHeight();
+    float curveHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
     
     // Calculate time scaling
     float totalTime = attack + decay + 0.5f + release; // +0.5s for sustain display
@@ -525,8 +525,21 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
         adsrPath.lineTo (x, y);
     }
     
-    // Draw the ADSR curve
-    g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.3f)); // #FFFFF2 at 30% opacity
+    // Close the path by connecting to baseline and back to start
+    float endX = sustainEndX + (release * timeScale);
+    adsrPath.lineTo (endX, baseY); // Down to baseline at end
+    adsrPath.lineTo (startX, baseY); // Back to start along baseline
+    adsrPath.closeSubPath();
+    
+    // Fill with gradient (top to bottom, very subtle)
+    auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
+    juce::ColourGradient gradient (colour.withAlpha(0.08f), curveX, curveY,
+                                   colour.withAlpha(0.02f), curveX, baseY, false);
+    g.setGradientFill (gradient);
+    g.fillPath (adsrPath);
+    
+    // Draw outline on top (very transparent)
+    g.setColour (colour.withAlpha (0.15f));
     g.strokePath (adsrPath, juce::PathStrokeType (1.5f));
 }
 
