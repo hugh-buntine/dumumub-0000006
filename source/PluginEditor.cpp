@@ -252,6 +252,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     grainFreqSlider.onValueChange = [this]() { grainFreqSlider.repaint(); };
     grainFreqSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
+        showingGrainFreqWaveforms = isDragging;
         activeSliderName = "GRAIN FREQ";
         activeSliderValue = value;
         repaint();
@@ -459,6 +460,10 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
     // Draw grain size waveform when Grain Size slider is being dragged
     if (showingGrainSizeWaveform)
         drawGrainSizeWaveform (g);
+    
+    // Draw multiple waveforms when Grain Frequency slider is being dragged
+    if (showingGrainFreqWaveforms)
+        drawGrainSizeWaveform (g); // Reuse the same waveform drawing, but draw it multiple times
 }
 
 void PluginEditor::drawADSRCurve (juce::Graphics& g)
@@ -555,15 +560,6 @@ void PluginEditor::drawGrainSizeWaveform (juce::Graphics& g)
     if (audioBuffer == nullptr || audioBuffer->getNumSamples() == 0)
         return;
     
-    // Get grain size in milliseconds and convert to samples
-    auto grainSizeMs = grainSizeSlider.getValue();
-    auto sampleRate = processorRef.getSampleRate();
-    if (sampleRate <= 0.0)
-        sampleRate = 44100.0; // Fallback
-    
-    int grainSizeSamples = static_cast<int>((grainSizeMs / 1000.0) * sampleRate);
-    grainSizeSamples = juce::jlimit (1, audioBuffer->getNumSamples(), grainSizeSamples);
-    
     // Use canvas bounds for drawing area
     auto canvasBounds = canvas.getBounds();
     float canvasWidth = canvasBounds.getWidth();
@@ -571,53 +567,145 @@ void PluginEditor::drawGrainSizeWaveform (juce::Graphics& g)
     float canvasX = canvasBounds.getX();
     float canvasY = canvasBounds.getY();
     
-    // Draw waveform horizontally across the canvas (left to right)
-    // Sample from the middle of the audio buffer for the grain size duration
-    int startSample = (audioBuffer->getNumSamples() - grainSizeSamples) / 2;
-    startSample = juce::jlimit (0, audioBuffer->getNumSamples() - grainSizeSamples, startSample);
-    
-    juce::Path waveformPath;
-    bool pathStarted = false;
-    
-    int numPoints = 200; // Number of points to sample for smooth curve
-    float xStep = canvasWidth / static_cast<float>(numPoints);
-    
-    for (int i = 0; i < numPoints; ++i)
-    {
-        // Map i to sample index within the grain size, starting from middle
-        float t = i / static_cast<float>(numPoints - 1);
-        int sampleIndex = startSample + static_cast<int>(t * grainSizeSamples);
-        sampleIndex = juce::jlimit (0, audioBuffer->getNumSamples() - 1, sampleIndex);
-        
-        // Get average magnitude across all channels
-        float magnitude = 0.0f;
-        for (int channel = 0; channel < audioBuffer->getNumChannels(); ++channel)
-        {
-            magnitude += audioBuffer->getSample (channel, sampleIndex);
-        }
-        magnitude /= audioBuffer->getNumChannels();
-        
-        // Scale magnitude to canvas height (centered vertically)
-        float x = canvasX + (i * xStep);
-        float y = canvasY + (canvasHeight * 0.5f) - (magnitude * canvasHeight * 0.3f);
-        
-        if (!pathStarted)
-        {
-            waveformPath.startNewSubPath (x, y);
-            pathStarted = true;
-        }
-        else
-        {
-            waveformPath.lineTo (x, y);
-        }
-    }
-    
-    // Draw the waveform with gradient fill (similar to ADSR style)
     auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
     
-    // Draw outline
-    g.setColour (colour.withAlpha (0.15f));
-    g.strokePath (waveformPath, juce::PathStrokeType (1.5f));
+    if (showingGrainFreqWaveforms)
+    {
+        // Frequency visualization with circles
+        float frequency = grainFreqSlider.getValue();
+        
+        // Get whole and fractional parts
+        int wholeCircles = static_cast<int>(frequency);
+        float fractionalPart = frequency - wholeCircles;
+        
+        // Circle radius
+        float circleRadius = 5.0f;
+        
+        // Predetermined circle positions (normalized 0-1, relative to canvas)
+        // These are hardcoded to look random but consistent
+        static const float circlePositions[][2] = {
+            {0.52f, 0.48f}, {0.38f, 0.62f}, {0.71f, 0.35f}, {0.29f, 0.41f}, {0.64f, 0.69f},
+            {0.45f, 0.27f}, {0.82f, 0.58f}, {0.19f, 0.73f}, {0.56f, 0.15f}, {0.33f, 0.85f},
+            {0.77f, 0.44f}, {0.41f, 0.56f}, {0.68f, 0.22f}, {0.24f, 0.67f}, {0.59f, 0.81f},
+            {0.88f, 0.39f}, {0.15f, 0.49f}, {0.49f, 0.92f}, {0.73f, 0.13f}, {0.35f, 0.28f},
+            {0.62f, 0.76f}, {0.27f, 0.54f}, {0.81f, 0.66f}, {0.43f, 0.19f}, {0.69f, 0.87f},
+            {0.21f, 0.36f}, {0.58f, 0.61f}, {0.91f, 0.25f}, {0.37f, 0.78f}, {0.76f, 0.51f},
+            {0.48f, 0.34f}, {0.84f, 0.72f}, {0.26f, 0.45f}, {0.65f, 0.18f}, {0.39f, 0.89f},
+            {0.72f, 0.57f}, {0.18f, 0.64f}, {0.54f, 0.31f}, {0.87f, 0.83f}, {0.31f, 0.24f},
+            {0.67f, 0.46f}, {0.44f, 0.74f}, {0.79f, 0.29f}, {0.23f, 0.59f}, {0.61f, 0.91f},
+            {0.36f, 0.16f}, {0.74f, 0.68f}, {0.28f, 0.52f}, {0.85f, 0.37f}, {0.47f, 0.79f},
+            {0.53f, 0.42f}, {0.92f, 0.63f}, {0.34f, 0.21f}, {0.71f, 0.86f}, {0.25f, 0.47f},
+            {0.63f, 0.33f}, {0.46f, 0.71f}, {0.83f, 0.54f}, {0.32f, 0.88f}, {0.69f, 0.26f},
+            {0.51f, 0.65f}, {0.89f, 0.48f}, {0.38f, 0.32f}, {0.76f, 0.77f}, {0.22f, 0.43f},
+            {0.58f, 0.19f}, {0.42f, 0.84f}, {0.78f, 0.61f}, {0.29f, 0.38f}, {0.66f, 0.53f},
+            {0.17f, 0.69f}, {0.55f, 0.23f}, {0.86f, 0.75f}, {0.41f, 0.51f}, {0.73f, 0.36f},
+            {0.33f, 0.82f}, {0.64f, 0.14f}, {0.48f, 0.67f}, {0.81f, 0.45f}, {0.27f, 0.58f},
+            {0.57f, 0.28f}, {0.93f, 0.71f}, {0.39f, 0.44f}, {0.75f, 0.89f}, {0.24f, 0.33f},
+            {0.62f, 0.56f}, {0.45f, 0.18f}, {0.84f, 0.64f}, {0.35f, 0.79f}, {0.68f, 0.41f},
+            {0.21f, 0.55f}, {0.59f, 0.93f}, {0.88f, 0.31f}, {0.43f, 0.72f}, {0.77f, 0.24f},
+            {0.31f, 0.61f}, {0.65f, 0.47f}, {0.49f, 0.85f}, {0.82f, 0.38f}, {0.37f, 0.69f},
+            {0.71f, 0.52f}, {0.26f, 0.27f}, {0.54f, 0.76f}, {0.91f, 0.59f}, {0.44f, 0.35f},
+            {0.79f, 0.81f}, {0.32f, 0.46f}, {0.67f, 0.21f}, {0.47f, 0.88f}, {0.85f, 0.57f},
+            {0.38f, 0.39f}, {0.74f, 0.73f}, {0.28f, 0.63f}, {0.61f, 0.17f}, {0.51f, 0.84f},
+            {0.89f, 0.42f}, {0.36f, 0.68f}, {0.72f, 0.29f}, {0.23f, 0.54f}, {0.58f, 0.91f},
+            {0.42f, 0.26f}, {0.76f, 0.65f}, {0.33f, 0.48f}, {0.69f, 0.83f}, {0.25f, 0.37f},
+            {0.63f, 0.59f}, {0.46f, 0.22f}, {0.81f, 0.74f}, {0.37f, 0.51f}, {0.73f, 0.16f},
+            {0.29f, 0.86f}, {0.66f, 0.43f}, {0.52f, 0.71f}, {0.87f, 0.34f}, {0.41f, 0.62f},
+            {0.78f, 0.49f}, {0.34f, 0.77f}, {0.68f, 0.28f}, {0.24f, 0.56f}, {0.59f, 0.19f},
+            {0.48f, 0.82f}, {0.83f, 0.47f}, {0.39f, 0.66f}, {0.75f, 0.31f}, {0.31f, 0.72f},
+            {0.64f, 0.53f}, {0.21f, 0.41f}, {0.57f, 0.87f}, {0.92f, 0.38f}, {0.43f, 0.64f},
+            {0.77f, 0.23f}, {0.35f, 0.58f}, {0.69f, 0.46f}, {0.27f, 0.81f}, {0.61f, 0.35f},
+            {0.47f, 0.69f}, {0.84f, 0.52f}, {0.38f, 0.25f}, {0.72f, 0.78f}, {0.26f, 0.44f},
+            {0.58f, 0.16f}, {0.91f, 0.67f}, {0.44f, 0.53f}, {0.79f, 0.36f}, {0.33f, 0.75f},
+            {0.65f, 0.27f}, {0.49f, 0.89f}, {0.82f, 0.58f}, {0.36f, 0.42f}, {0.71f, 0.63f},
+            {0.23f, 0.31f}, {0.56f, 0.79f}, {0.88f, 0.46f}, {0.42f, 0.68f}, {0.76f, 0.21f},
+            {0.32f, 0.57f}, {0.67f, 0.84f}, {0.45f, 0.39f}, {0.81f, 0.72f}, {0.37f, 0.29f},
+            {0.73f, 0.61f}, {0.28f, 0.48f}, {0.62f, 0.18f}, {0.51f, 0.86f}, {0.87f, 0.43f},
+            {0.39f, 0.74f}, {0.75f, 0.32f}, {0.31f, 0.66f}, {0.64f, 0.49f}, {0.22f, 0.83f},
+            {0.57f, 0.37f}, {0.93f, 0.69f}, {0.46f, 0.54f}, {0.79f, 0.24f}, {0.34f, 0.59f}
+        };
+        
+        const int maxCircles = 200; // Maximum number of circles
+        
+        // Draw whole circles
+        for (int i = 0; i < wholeCircles && i < maxCircles; ++i)
+        {
+            float x = canvasX + circlePositions[i][0] * canvasWidth;
+            float y = canvasY + circlePositions[i][1] * canvasHeight;
+            
+            g.setColour (colour.withAlpha (0.15f));
+            g.fillEllipse (x - circleRadius, y - circleRadius, circleRadius * 2, circleRadius * 2);
+        }
+        
+        // Draw fractional circle if needed
+        if (fractionalPart > 0.01f && wholeCircles < maxCircles)
+        {
+            float x = canvasX + circlePositions[wholeCircles][0] * canvasWidth;
+            float y = canvasY + circlePositions[wholeCircles][1] * canvasHeight;
+            
+            float alpha = 0.15f * fractionalPart; // Scale alpha by fractional amount
+            g.setColour (colour.withAlpha (alpha));
+            g.fillEllipse (x - circleRadius, y - circleRadius, circleRadius * 2, circleRadius * 2);
+        }
+    }
+    else
+    {
+        // Single waveform for grain size visualization
+        // Get grain size in milliseconds and convert to samples
+        auto grainSizeMs = grainSizeSlider.getValue();
+        auto sampleRate = processorRef.getSampleRate();
+        if (sampleRate <= 0.0)
+            sampleRate = 44100.0; // Fallback
+        
+        int grainSizeSamples = static_cast<int>((grainSizeMs / 1000.0) * sampleRate);
+        grainSizeSamples = juce::jlimit (1, audioBuffer->getNumSamples(), grainSizeSamples);
+        
+        // Sample from the middle of the audio buffer for the grain size duration
+        int startSample = (audioBuffer->getNumSamples() - grainSizeSamples) / 2;
+        startSample = juce::jlimit (0, audioBuffer->getNumSamples() - grainSizeSamples, startSample);
+        
+        juce::Path waveformPath;
+        bool pathStarted = false;
+        
+        int numPoints = 200; // Number of points to sample for smooth curve
+        float xStep = canvasWidth / static_cast<float>(numPoints);
+        float waveformCenterY = canvasY + (canvasHeight * 0.5f);
+        
+        for (int i = 0; i < numPoints; ++i)
+        {
+            // Map i to sample index within the grain size
+            float t = i / static_cast<float>(numPoints - 1);
+            int sampleIndex = startSample + static_cast<int>(t * grainSizeSamples);
+            sampleIndex = juce::jlimit (0, audioBuffer->getNumSamples() - 1, sampleIndex);
+            
+            // Get average magnitude across all channels
+            float magnitude = 0.0f;
+            for (int channel = 0; channel < audioBuffer->getNumChannels(); ++channel)
+            {
+                magnitude += audioBuffer->getSample (channel, sampleIndex);
+            }
+            magnitude /= audioBuffer->getNumChannels();
+            
+            // Scale magnitude to canvas height
+            float scaleFactor = 0.3f;
+            float x = canvasX + (i * xStep);
+            float y = waveformCenterY - (magnitude * canvasHeight * scaleFactor);
+            
+            if (!pathStarted)
+            {
+                waveformPath.startNewSubPath (x, y);
+                pathStarted = true;
+            }
+            else
+            {
+                waveformPath.lineTo (x, y);
+            }
+        }
+        
+        // Draw outline
+        g.setColour (colour.withAlpha (0.15f));
+        g.strokePath (waveformPath, juce::PathStrokeType (1.5f));
+    }
 }
 
 void PluginEditor::resized()

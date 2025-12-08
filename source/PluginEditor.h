@@ -221,6 +221,9 @@ private:
     
     // Grain size waveform display tracking
     bool showingGrainSizeWaveform = false;
+    
+    // Grain frequency waveform display tracking
+    bool showingGrainFreqWaveforms = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
