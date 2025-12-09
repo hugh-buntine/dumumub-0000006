@@ -436,7 +436,7 @@ float Particle::getPan() const
 Particle::EdgeFade Particle::getEdgeFade() const
 {
     EdgeFade result;
-    result.amplitude = 1.0f;
+    result.amplitude = 1.0f; // Always full amplitude, no fade out
     
     if (canvasBounds.getWidth() <= 0)
     {
@@ -444,16 +444,19 @@ Particle::EdgeFade Particle::getEdgeFade() const
         return result;
     }
     
-    const float edgeFadeZone = 50.0f; // 50px from edge starts fade
+    const float edgeFadeZone = 50.0f; // 50px from edge starts pan transition
     float normalizedX = (position.x - canvasBounds.getX()) / canvasBounds.getWidth();
-    result.pan = juce::jlimit (-1.0f, 1.0f, (normalizedX * 2.0f) - 1.0f);
+    
+    // Calculate base pan: left edge = -1.0, center = 0.0, right edge = 1.0
+    float basePan = juce::jlimit (-1.0f, 1.0f, (normalizedX * 2.0f) - 1.0f);
     
     // Check if near left edge (x < edgeFadeZone)
     float distanceFromLeft = position.x - canvasBounds.getX();
     if (distanceFromLeft < edgeFadeZone)
     {
-        // Fade amplitude down as we approach left edge
-        result.amplitude = distanceFromLeft / edgeFadeZone;
+        // Transition pan from base position to center (0.0) as we approach left edge
+        float edgeFactor = distanceFromLeft / edgeFadeZone; // 0.0 at edge, 1.0 at fadeZone boundary
+        result.pan = basePan * edgeFactor; // Gradually moves towards 0.0 (center)
         return result;
     }
     
@@ -461,12 +464,14 @@ Particle::EdgeFade Particle::getEdgeFade() const
     float distanceFromRight = canvasBounds.getRight() - position.x;
     if (distanceFromRight < edgeFadeZone)
     {
-        // Fade amplitude down as we approach right edge
-        result.amplitude = distanceFromRight / edgeFadeZone;
+        // Transition pan from base position to center (0.0) as we approach right edge
+        float edgeFactor = distanceFromRight / edgeFadeZone; // 0.0 at edge, 1.0 at fadeZone boundary
+        result.pan = basePan * edgeFactor; // Gradually moves towards 0.0 (center)
         return result;
     }
     
-    // Not near any edge - full amplitude
+    // Not near any edge - use full pan based on position
+    result.pan = basePan;
     return result;
 }
 
