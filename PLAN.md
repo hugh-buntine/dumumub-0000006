@@ -7,7 +7,7 @@ MIDI-triggered grains spawn on 2D canvas and orbit around movable center mass. P
 
 ## Parameters (Sliders/Knobs)
 
-- **Grain Size** (10-250ms) - Duration of each grain
+- **Grain Size** (10-500ms) - Duration of each grain
 - **Grain Lifespan** (0.1-infinite) - How long before fade out
 - **ADSR** - Attack, Decay, Sustain, Release envelope
 - **Gravity Strength** - Pull force toward center mass
