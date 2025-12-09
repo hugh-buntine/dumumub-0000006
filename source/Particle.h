@@ -140,6 +140,7 @@ private:
     
     // Active grains (can have multiple overlapping)
     std::vector<Grain> activeGrains;
+    static constexpr int MAX_GRAINS_PER_PARTICLE = 8; // CPU optimization: limit concurrent grains
     
     // Grain audio parameters
     float grainSizeMs = 50.0f;      // Grain duration in milliseconds

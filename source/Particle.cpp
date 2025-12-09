@@ -30,6 +30,27 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
 
 void Particle::triggerNewGrain (int bufferLength)
 {
+    // CPU Optimization: Limit concurrent grains with voice stealing
+    if (activeGrains.size() >= MAX_GRAINS_PER_PARTICLE)
+    {
+        // Find the grain with the lowest amplitude (furthest along in playback)
+        // This is a simple voice stealing strategy - remove the quietest grain
+        int oldestGrainIndex = 0;
+        int maxPlaybackPos = 0;
+        
+        for (size_t i = 0; i < activeGrains.size(); ++i)
+        {
+            if (activeGrains[i].playbackPosition > maxPlaybackPos)
+            {
+                maxPlaybackPos = activeGrains[i].playbackPosition;
+                oldestGrainIndex = static_cast<int>(i);
+            }
+        }
+        
+        // Remove the oldest grain
+        activeGrains.erase (activeGrains.begin() + oldestGrainIndex);
+    }
+    
     int startSample = calculateGrainStartPosition (bufferLength);
     activeGrains.push_back (Grain (startSample));
     
