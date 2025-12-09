@@ -40,11 +40,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     
-    // Grain Size (10ms - 500ms, increased minimum)
+    // Grain Size (10ms - 250ms, reduced maximum for CPU efficiency)
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "grainSize",
         "Grain Size",
-        juce::NormalisableRange<float> (10.0f, 500.0f, 1.0f, 0.5f),
+        juce::NormalisableRange<float> (10.0f, 250.0f, 1.0f, 0.5f),
         50.0f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
