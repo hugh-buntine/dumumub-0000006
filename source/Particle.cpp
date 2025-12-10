@@ -298,21 +298,25 @@ void Particle::draw (juce::Graphics& g)
     juce::Point<float> ghostPosition = position;
     bool shouldDrawGhost = false;
     
-    // Near left edge - fade main particle, show ghost on right
-    if (distanceFromLeft < edgeFadeZone && canvasBounds.getWidth() > 0)
+    // Only fade and show ghost particles in wrap mode, not in bounce mode
+    if (!bounceMode)
     {
-        mainAlpha = distanceFromLeft / edgeFadeZone;
-        ghostAlpha = 1.0f - mainAlpha;
-        ghostPosition.x = position.x + canvasBounds.getWidth();
-        shouldDrawGhost = true;
-    }
-    // Near right edge - fade main particle, show ghost on left
-    else if (distanceFromRight < edgeFadeZone && canvasBounds.getWidth() > 0)
-    {
-        mainAlpha = distanceFromRight / edgeFadeZone;
-        ghostAlpha = 1.0f - mainAlpha;
-        ghostPosition.x = position.x - canvasBounds.getWidth();
-        shouldDrawGhost = true;
+        // Near left edge - fade main particle, show ghost on right
+        if (distanceFromLeft < edgeFadeZone && canvasBounds.getWidth() > 0)
+        {
+            mainAlpha = distanceFromLeft / edgeFadeZone;
+            ghostAlpha = 1.0f - mainAlpha;
+            ghostPosition.x = position.x + canvasBounds.getWidth();
+            shouldDrawGhost = true;
+        }
+        // Near right edge - fade main particle, show ghost on left
+        else if (distanceFromRight < edgeFadeZone && canvasBounds.getWidth() > 0)
+        {
+            mainAlpha = distanceFromRight / edgeFadeZone;
+            ghostAlpha = 1.0f - mainAlpha;
+            ghostPosition.x = position.x - canvasBounds.getWidth();
+            shouldDrawGhost = true;
+        }
     }
     
     // Trail color is always off-white (#FFFFF2 = RGB 255, 255, 242)
