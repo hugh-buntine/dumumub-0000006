@@ -651,35 +651,51 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Calculate source position with pitch shift (float for interpolation)
                 float sourcePosition = grainStartSample + ((grainPosition + i) * pitchShift);
                 
-                // Linear interpolation between samples for smooth pitch shift
-                int sourceSample1 = static_cast<int>(sourcePosition);
-                int sourceSample2 = sourceSample1 + 1;
-                float fraction = sourcePosition - sourceSample1;
+                // Cubic (Hermite) interpolation for smoother pitch shift (eliminates aliasing noise)
+                // Uses 4 samples: y0, y1, y2, y3 where we interpolate between y1 and y2
+                int sourceSample = static_cast<int>(sourcePosition);
+                float fraction = sourcePosition - sourceSample;
                 
-                // Fast wrapping with branches instead of modulo (branch prediction makes this faster)
-                if (sourceSample1 >= bufferLength)
-                    sourceSample1 -= bufferLength;
-                else if (sourceSample1 < 0)
-                    sourceSample1 += bufferLength;
+                // Get 4 sample indices for cubic interpolation
+                int s0 = sourceSample - 1;
+                int s1 = sourceSample;
+                int s2 = sourceSample + 1;
+                int s3 = sourceSample + 2;
                 
-                if (sourceSample2 >= bufferLength)
-                    sourceSample2 -= bufferLength;
-                else if (sourceSample2 < 0)
-                    sourceSample2 += bufferLength;
+                // Fast wrapping with branches (branch prediction makes this faster than modulo)
+                if (s0 < 0) s0 += bufferLength;
+                else if (s0 >= bufferLength) s0 -= bufferLength;
                 
-                // Get audio samples using direct pointer access (much faster than getSample())
-                float audioSample1 = 0.0f;
-                float audioSample2 = 0.0f;
+                if (s1 < 0) s1 += bufferLength;
+                else if (s1 >= bufferLength) s1 -= bufferLength;
+                
+                if (s2 < 0) s2 += bufferLength;
+                else if (s2 >= bufferLength) s2 -= bufferLength;
+                
+                if (s3 < 0) s3 += bufferLength;
+                else if (s3 >= bufferLength) s3 -= bufferLength;
+                
+                // Get audio samples and mix channels
+                float y0 = 0.0f, y1 = 0.0f, y2 = 0.0f, y3 = 0.0f;
                 for (int channel = 0; channel < audioFileBuffer.getNumChannels(); ++channel)
                 {
-                    audioSample1 += sourceChannelPointers[channel][sourceSample1];
-                    audioSample2 += sourceChannelPointers[channel][sourceSample2];
+                    y0 += sourceChannelPointers[channel][s0];
+                    y1 += sourceChannelPointers[channel][s1];
+                    y2 += sourceChannelPointers[channel][s2];
+                    y3 += sourceChannelPointers[channel][s3];
                 }
-                audioSample1 *= channelMult;  // Multiply instead of divide (faster!)
-                audioSample2 *= channelMult;
+                y0 *= channelMult;
+                y1 *= channelMult;
+                y2 *= channelMult;
+                y3 *= channelMult;
                 
-                // Linear interpolation
-                float audioSample = audioSample1 + fraction * (audioSample2 - audioSample1);
+                // Cubic Hermite interpolation (4-point, 3rd-order)
+                // This creates smooth curves between samples, eliminating high-frequency aliasing
+                float c0 = y1;
+                float c1 = 0.5f * (y2 - y0);
+                float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+                float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+                float audioSample = ((c3 * fraction + c2) * fraction + c1) * fraction + c0;
                 
                 // Denormal protection: flush very small numbers to zero to prevent CPU thrashing and noise
                 if (std::abs(audioSample) < 1e-8f)
