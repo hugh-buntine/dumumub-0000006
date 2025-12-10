@@ -1,8 +1,44 @@
 #include "Particle.h"
 #include "Logger.h"
 
-// Initialize static member
+// Initialize static members
 juce::Image Particle::starImage;
+std::vector<float> Particle::hannWindowTable;
+
+// Initialize Hann window lookup table (call once at app startup)
+void Particle::initializeHannTable()
+{
+    if (!hannWindowTable.empty())
+        return; // Already initialized
+    
+    hannWindowTable.resize (HANN_TABLE_SIZE);
+    
+    const float pi = juce::MathConstants<float>::pi;
+    for (int i = 0; i < HANN_TABLE_SIZE; ++i)
+    {
+        float normalizedPos = static_cast<float>(i) / static_cast<float>(HANN_TABLE_SIZE - 1);
+        hannWindowTable[i] = 0.5f * (1.0f - std::cos (2.0f * pi * normalizedPos));
+    }
+}
+
+// Fast Hann window lookup with linear interpolation
+float Particle::getHannWindowValue (float normalizedPosition)
+{
+    if (hannWindowTable.empty())
+        initializeHannTable(); // Lazy initialization fallback
+    
+    // Clamp position to valid range
+    normalizedPosition = juce::jlimit (0.0f, 1.0f, normalizedPosition);
+    
+    // Convert to table index (floating point for interpolation)
+    float tablePos = normalizedPosition * static_cast<float>(HANN_TABLE_SIZE - 1);
+    int index0 = static_cast<int>(tablePos);
+    int index1 = juce::jmin (index0 + 1, HANN_TABLE_SIZE - 1);
+    
+    // Linear interpolation between table entries
+    float frac = tablePos - static_cast<float>(index0);
+    return hannWindowTable[index0] + frac * (hannWindowTable[index1] - hannWindowTable[index0]);
+}
 
 //==============================================================================
 Particle::Particle (juce::Point<float> position, juce::Point<float> velocity, 
@@ -518,27 +554,17 @@ Particle::EdgeFade Particle::getEdgeFade() const
 
 float Particle::getGrainAmplitude (const Grain& grain) const
 {
-    // HARDCODED 50% crossfade for all grains:
-    // - First 50% of grain: fade in from 0.0 to 1.0
-    // - Last 50% of grain: fade out from 1.0 to 0.0
+    // Use Hann window lookup table for smooth grain envelope (prevents clicks)
+    // This creates a smooth bell curve from 0.0 → 1.0 → 0.0
     
     int grainPos = grain.playbackPosition;
-    int halfGrain = cachedTotalGrainSamples / 2;
     
-    float grainEnvelope;
+    // Normalize position to 0.0-1.0 range
+    float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(cachedTotalGrainSamples);
+    normalizedPos = juce::jlimit (0.0f, 1.0f, normalizedPos);
     
-    if (grainPos < halfGrain)
-    {
-        // First half: fade in from 0.0 to 1.0
-        grainEnvelope = static_cast<float>(grainPos) / static_cast<float>(halfGrain);
-    }
-    else
-    {
-        // Second half: fade out from 1.0 to 0.0
-        int posInSecondHalf = grainPos - halfGrain;
-        int secondHalfDuration = cachedTotalGrainSamples - halfGrain;
-        grainEnvelope = 1.0f - (static_cast<float>(posInSecondHalf) / static_cast<float>(secondHalfDuration));
-    }
+    // Fast lookup from pre-calculated Hann window table
+    float grainEnvelope = getHannWindowValue (normalizedPos);
     
     // Apply particle ADSR amplitude on top of grain envelope
     return grainEnvelope * adsrAmplitude;

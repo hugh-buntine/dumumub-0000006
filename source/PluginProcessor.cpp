@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "Logger.h"
 #include "Canvas.h"
+#include "Particle.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 //==============================================================================
@@ -19,6 +20,10 @@ PluginProcessor::PluginProcessor()
     // Initialize the logger
     Logger::getInstance().initialize("dumumub-0000006.log", "dumumub-0000006 Plugin Logger");
     LOG_INFO("PluginProcessor constructed");
+    
+    // Initialize Hann window lookup table (shared by all particles)
+    Particle::initializeHannTable();
+    LOG_INFO("Initialized Hann window lookup table");
     
     // Create default mass point at center (will be positioned correctly when canvas size is known)
     massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });

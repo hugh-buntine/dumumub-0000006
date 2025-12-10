@@ -107,6 +107,9 @@ public:
     // Set the star image for all particles to use
     static void setStarImage (const juce::Image& image) { starImage = image; }
     
+    // Static Hann window lookup table initialization (call once at startup)
+    static void initializeHannTable();
+    
     // Draw the particle
     void draw (juce::Graphics& g);
 
@@ -174,5 +177,10 @@ private:
     
     // Static star image shared by all particles
     static juce::Image starImage;
+    
+    // Static Hann window lookup table (shared by all particles for efficiency)
+    static std::vector<float> hannWindowTable;
+    static constexpr int HANN_TABLE_SIZE = 512; // 512 samples provides smooth interpolation
+    static float getHannWindowValue (float normalizedPosition); // Fast lookup with linear interpolation
 };
 
