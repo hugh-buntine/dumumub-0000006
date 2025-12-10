@@ -618,8 +618,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Apply master gain
             amplitude *= masterGainLinear;
             
-            // CPU Optimization: Skip grains below audible threshold (saves ~30% CPU)
-            if (amplitude < 0.01f)
+            // CPU Optimization: Skip grains below audible threshold (saves ~30% CPU and reduces noise)
+            if (amplitude < 0.02f)  // Increased from 0.01f to reduce denormal noise
                 continue;
             
             // Get pitch shift for this particle
@@ -680,6 +680,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 
                 // Linear interpolation
                 float audioSample = audioSample1 + fraction * (audioSample2 - audioSample1);
+                
+                // Denormal protection: flush very small numbers to zero to prevent CPU thrashing and noise
+                if (std::abs(audioSample) < 1e-8f)
+                    audioSample = 0.0f;
                 
                 // Calculate final stereo gains (apply amplitude modulation to cached pan gains)
                 float leftGain = leftPanGain * amplitude;
