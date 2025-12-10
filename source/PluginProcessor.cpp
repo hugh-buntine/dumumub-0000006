@@ -654,6 +654,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Cubic (Hermite) interpolation for smoother pitch shift (eliminates aliasing noise)
                 // Uses 4 samples: y0, y1, y2, y3 where we interpolate between y1 and y2
                 int sourceSample = static_cast<int>(sourcePosition);
+                
+                // CRITICAL BOUNDS CHECK: Prevent reading outside buffer (major source of static/noise)
+                // Need room for 4 samples (cubic interpolation requires s-1, s, s+1, s+2)
+                if (sourceSample < 1 || sourceSample >= bufferLength - 2)
+                {
+                    // Outside safe bounds - output silence instead of garbage memory
+                    // This prevents static noise when grains read near buffer edges
+                    if (leftChannel)
+                        leftChannel[i] += 0.0f;
+                    if (rightChannel)
+                        rightChannel[i] += 0.0f;
+                    continue;
+                }
+                
                 float fraction = sourcePosition - sourceSample;
                 
                 // Get 4 sample indices for cubic interpolation
@@ -662,18 +676,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int s2 = sourceSample + 1;
                 int s3 = sourceSample + 2;
                 
-                // Fast wrapping with branches (branch prediction makes this faster than modulo)
-                if (s0 < 0) s0 += bufferLength;
-                else if (s0 >= bufferLength) s0 -= bufferLength;
-                
-                if (s1 < 0) s1 += bufferLength;
-                else if (s1 >= bufferLength) s1 -= bufferLength;
-                
-                if (s2 < 0) s2 += bufferLength;
-                else if (s2 >= bufferLength) s2 -= bufferLength;
-                
-                if (s3 < 0) s3 += bufferLength;
-                else if (s3 >= bufferLength) s3 -= bufferLength;
+                // All indices are now guaranteed to be in valid range [0, bufferLength-1]
+                // No wrapping needed - we've already bounds-checked above
                 
                 // Get audio samples and mix channels
                 float y0 = 0.0f, y1 = 0.0f, y2 = 0.0f, y3 = 0.0f;
