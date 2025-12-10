@@ -290,6 +290,7 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
     // Create new particle with ADSR parameters
     auto* particle = new Particle (position, velocity, canvasBounds, midiNoteNumber,
                                    attackTime, sustainLevel, releaseTime, initialVelocity, pitchShift);
+    particle->setBounceMode (bounceMode); // Set current bounce mode
     int newIndex = particles.size();
     particles.add (particle);
     
@@ -422,8 +423,11 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSi
         // Update particle physics
         particle->update (deltaTime);
         
-        // Wrap around canvas boundaries
-        particle->wrapAround (canvasBounds);
+        // Wrap around or bounce off canvas boundaries
+        if (bounceMode)
+            particle->bounceOff (canvasBounds);
+        else
+            particle->wrapAround (canvasBounds);
         
         // Remove finished particles (ADSR release complete)
         if (particle->isFinished())
@@ -810,6 +814,22 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
             }
             LOG_INFO("Restored " + juce::String(spawnPoints.size()) + " spawn points");
         }
+    }
+}
+
+//==============================================================================
+// Bounce Mode
+
+void PluginProcessor::setBounceMode (bool enabled)
+{
+    bounceMode = enabled;
+    
+    // Update all existing particles
+    const juce::ScopedLock lock (particlesLock);
+    for (auto* particle : particles)
+    {
+        if (particle != nullptr)
+            particle->setBounceMode (enabled);
     }
 }
 

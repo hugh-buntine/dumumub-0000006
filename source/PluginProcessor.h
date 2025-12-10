@@ -97,6 +97,8 @@ public:
     void setCanvasBounds (juce::Rectangle<float> bounds) { canvasBounds = bounds; }
     void setParticleLifespan (float lifespan) { particleLifespan = lifespan; }
     void setMaxParticles (int max) { maxParticles = max; }
+    void setBounceMode (bool enabled);
+    bool getBounceMode() const { return bounceMode; }
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
@@ -133,6 +135,7 @@ private:
     juce::Rectangle<float> canvasBounds {0, 0, 800, 600};
     float particleLifespan = 30.0f; // Legacy parameter - no longer used with ADSR
     int maxParticles = 8; // Default limit (can be changed via setMaxParticles)
+    bool bounceMode = false; // When true, particles bounce off walls instead of wrapping
     
     // Timing for particle updates
     double lastUpdateTime = 0.0;

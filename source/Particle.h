@@ -40,6 +40,7 @@ public:
     void update (float deltaTime);
     void applyForce (const juce::Point<float>& force);
     void wrapAround (const juce::Rectangle<float>& bounds);
+    void bounceOff (const juce::Rectangle<float>& bounds);
     
     // Getters
     juce::Point<float> getPosition() const { return position; }
@@ -72,6 +73,10 @@ public:
     
     // Setter to convert normalized position to actual sample index
     void setGrainStartSampleFromBuffer (int bufferLength);
+    
+    // Set bounce mode (affects edge panning behavior)
+    void setBounceMode (bool enabled) { bounceMode = enabled; }
+    bool getBounceMode() const { return bounceMode; }
     
     // Update grain start position based on current Y position (for continuous grains)
     int calculateGrainStartPosition (int bufferLength);
@@ -137,6 +142,9 @@ private:
     
     // Canvas bounds for position mapping
     juce::Rectangle<float> canvasBounds;
+    
+    // Bounce mode (affects edge panning behavior)
+    bool bounceMode = false;
     
     // Active grains (can have multiple overlapping)
     std::vector<Grain> activeGrains;

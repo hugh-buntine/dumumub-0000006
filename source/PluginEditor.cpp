@@ -77,6 +77,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (graphicsButton);
     graphicsButton.setImages (graphicsButtonUnpressed, graphicsButtonUnpressedHover,
                              graphicsButtonPressed, graphicsButtonPressedHover);
+    graphicsButton.onClick = [this]() {
+        // Update canvas bounce mode based on button state
+        canvas.setBounceMode (graphicsButton.getToggleState());
+    };
     
     // Setup Break CPU button
     addAndMakeVisible (breakCpuButton);

@@ -254,6 +254,35 @@ void Particle::wrapAround (const juce::Rectangle<float>& bounds)
         position.y = bounds.getY();
 }
 
+void Particle::bounceOff (const juce::Rectangle<float>& bounds)
+{
+    // Bounce off walls by reversing velocity and constraining position
+    
+    // Bounce horizontally
+    if (position.x < bounds.getX())
+    {
+        position.x = bounds.getX();
+        velocity.x = std::abs(velocity.x); // Make positive (moving right)
+    }
+    else if (position.x > bounds.getRight())
+    {
+        position.x = bounds.getRight();
+        velocity.x = -std::abs(velocity.x); // Make negative (moving left)
+    }
+    
+    // Bounce vertically
+    if (position.y < bounds.getY())
+    {
+        position.y = bounds.getY();
+        velocity.y = std::abs(velocity.y); // Make positive (moving down)
+    }
+    else if (position.y > bounds.getBottom())
+    {
+        position.y = bounds.getBottom();
+        velocity.y = -std::abs(velocity.y); // Make negative (moving up)
+    }
+}
+
 void Particle::draw (juce::Graphics& g)
 {
     // Calculate base alpha from ADSR amplitude
@@ -450,6 +479,14 @@ Particle::EdgeFade Particle::getEdgeFade() const
     // Calculate base pan: left edge = -1.0, center = 0.0, right edge = 1.0
     float basePan = juce::jlimit (-1.0f, 1.0f, (normalizedX * 2.0f) - 1.0f);
     
+    // In bounce mode, allow full left/right panning without center transition
+    if (bounceMode)
+    {
+        result.pan = basePan;
+        return result;
+    }
+    
+    // In wrap mode, transition to center at edges for seamless wraparound
     // Check if near left edge (x < edgeFadeZone)
     float distanceFromLeft = position.x - canvasBounds.getX();
     if (distanceFromLeft < edgeFadeZone)

@@ -75,6 +75,13 @@ void Canvas::setBreakCpuMode (bool enabled)
     }
 }
 
+void Canvas::setBounceMode (bool enabled)
+{
+    bounceMode = enabled;
+    audioProcessor.setBounceMode (enabled);
+    LOG_INFO("Bounce mode " + juce::String(enabled ? "enabled" : "disabled") + " - particles will " + juce::String(enabled ? "bounce off walls" : "wrap around edges"));
+}
+
 //==============================================================================
 void Canvas::paint (juce::Graphics& g)
 {

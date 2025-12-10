@@ -60,6 +60,9 @@ public:
     // Set break CPU mode (unlimited particles/masses/spawn points)
     void setBreakCpuMode (bool enabled);
     
+    // Set bounce mode (particles bounce off walls instead of wrapping)
+    void setBounceMode (bool enabled);
+    
     // Access to particles - now deprecated, particles live in processor
     // These are kept for backward compatibility during transition
     juce::OwnedArray<Particle>* getParticles();
@@ -71,6 +74,7 @@ private:
     PluginProcessor& audioProcessor;
 
     bool breakCpuMode = false;
+    bool bounceMode = false;
     int maxSpawnPoints = 8;
     int maxMassPoints = 4;
     int maxParticles = 8;
