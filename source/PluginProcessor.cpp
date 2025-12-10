@@ -670,6 +670,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 
                 float fraction = sourcePosition - sourceSample;
                 
+                // Clamp fraction to [0,1] to prevent interpolation artifacts from FP errors
+                fraction = juce::jlimit(0.0f, 1.0f, fraction);
+                
                 // Get 4 sample indices for cubic interpolation
                 int s0 = sourceSample - 1;
                 int s1 = sourceSample;
@@ -700,6 +703,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
                 float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
                 float audioSample = ((c3 * fraction + c2) * fraction + c1) * fraction + c0;
+                
+                // Clamp output to reasonable range to prevent cubic overshoot artifacts
+                // Cubic interpolation can exceed input range, causing audible distortion/noise
+                float minSample = juce::jmin(y0, y1, y2, y3);
+                float maxSample = juce::jmax(y0, y1, y2, y3);
+                audioSample = juce::jlimit(minSample, maxSample, audioSample);
                 
                 // Denormal protection: flush very small numbers to zero to prevent CPU thrashing and noise
                 if (std::abs(audioSample) < 1e-8f)
