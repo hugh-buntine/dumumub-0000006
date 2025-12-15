@@ -606,21 +606,17 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Get edge fade info (simple amplitude fade at boundaries)
             auto edgeFade = particle->getEdgeFade();
             
-            // Get grain amplitude (includes hardcoded 50% crossfade AND particle ADSR)
-            float amplitude = particle->getGrainAmplitude (grain); // 0.0 to 1.0
+            // NOTE: Grain amplitude (Hann window) changes per-sample as grain plays
+            // Don't calculate it once here - calculate inside the sample loop!
+            // float amplitude = particle->getGrainAmplitude (grain); // OLD: causes zipper noise
             
-            // Apply edge fade (fades to 0 near boundaries)
-            amplitude *= edgeFade.amplitude;
+            // Pre-calculate constant amplitude factors (NOT grain envelope - that's per-sample)
+            float constantAmplitude = masterGainLinear;
+            // constantAmplitude *= edgeFade.amplitude;  // DISABLED for diagnostic
+            // constantAmplitude *= particle->getInitialVelocityMultiplier();  // DISABLED for diagnostic
             
-            // Apply MIDI velocity
-            amplitude *= particle->getInitialVelocityMultiplier();
-            
-            // Apply master gain
-            amplitude *= masterGainLinear;
-            
-            // CPU Optimization: Skip grains below audible threshold (saves ~30% CPU and reduces noise)
-            if (amplitude < 0.02f)  // Increased from 0.01f to reduce denormal noise
-                continue;
+            // NOTE: Can't skip grains based on amplitude here since it changes per-sample
+            // Grain amplitude will be calculated in the sample loop below
             
             // Get pitch shift for this particle
             float pitchShift = particle->getPitchShift();
@@ -714,9 +710,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (std::abs(audioSample) < 1e-8f)
                     audioSample = 0.0f;
                 
+                // CRITICAL FIX: Calculate grain amplitude PER-SAMPLE as grain plays through
+                // Create temporary grain with current sample position for amplitude calculation
+                Grain currentGrain = grain;
+                currentGrain.playbackPosition = grainPosition + i;
+                float grainAmplitude = particle->getGrainAmplitude (currentGrain);
+                
+                // Combine grain envelope with constant amplitude factors
+                float totalAmplitude = grainAmplitude * constantAmplitude;
+                
                 // Calculate final stereo gains (apply amplitude modulation to cached pan gains)
-                float leftGain = leftPanGain * amplitude;
-                float rightGain = rightPanGain * amplitude;
+                float leftGain = leftPanGain * totalAmplitude;
+                float rightGain = rightPanGain * totalAmplitude;
                 
                 // Write to output with panning using direct pointer access
                 if (leftChannel)

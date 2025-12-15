@@ -37,7 +37,14 @@ float Particle::getHannWindowValue (float normalizedPosition)
     
     // Linear interpolation between table entries
     float frac = tablePos - static_cast<float>(index0);
-    return hannWindowTable[index0] + frac * (hannWindowTable[index1] - hannWindowTable[index0]);
+    float value = hannWindowTable[index0] + frac * (hannWindowTable[index1] - hannWindowTable[index0]);
+    
+    // Flush denormals to zero to prevent noise artifacts
+    // When values get extremely small (< 1e-15), they can cause audible artifacts
+    if (std::abs(value) < 1e-15f)
+        value = 0.0f;
+    
+    return value;
 }
 
 //==============================================================================
@@ -554,8 +561,12 @@ Particle::EdgeFade Particle::getEdgeFade() const
 
 float Particle::getGrainAmplitude (const Grain& grain) const
 {
-    // Use Hann window lookup table for smooth grain envelope (prevents clicks)
+    // Use Hann window for smooth grain envelope (prevents clicks)
     // This creates a smooth bell curve from 0.0 → 1.0 → 0.0
+    
+    // Safety check: ensure grain size is valid
+    if (cachedTotalGrainSamples <= 0)
+        return 0.0f;
     
     int grainPos = grain.playbackPosition;
     
@@ -563,11 +574,16 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(cachedTotalGrainSamples);
     normalizedPos = juce::jlimit (0.0f, 1.0f, normalizedPos);
     
-    // Fast lookup from pre-calculated Hann window table
-    float grainEnvelope = getHannWindowValue (normalizedPos);
+    // DIAGNOSTIC: Calculate Hann window directly instead of lookup table
+    const float pi = juce::MathConstants<float>::pi;
+    float grainEnvelope = 0.5f * (1.0f - std::cos(2.0f * pi * normalizedPos));
     
-    // Apply particle ADSR amplitude on top of grain envelope
-    return grainEnvelope * adsrAmplitude;
+    // Validate result - check for NaN or infinity
+    if (!std::isfinite(grainEnvelope))
+        grainEnvelope = 0.0f;
+    
+    // DIAGNOSTIC: Return only Hann window - bypass particle ADSR to isolate noise source
+    return grainEnvelope; // * adsrAmplitude;
 }
 
 int Particle::calculateGrainStartPosition (int bufferLength)
