@@ -582,8 +582,8 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     if (!std::isfinite(grainEnvelope))
         grainEnvelope = 0.0f;
     
-    // DIAGNOSTIC: Return only Hann window - bypass particle ADSR to isolate noise source
-    return grainEnvelope; // * adsrAmplitude;
+    // Combine Hann window with particle ADSR envelope
+    return grainEnvelope * adsrAmplitude;
 }
 
 int Particle::calculateGrainStartPosition (int bufferLength)

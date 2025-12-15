@@ -606,14 +606,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Get edge fade info (simple amplitude fade at boundaries)
             auto edgeFade = particle->getEdgeFade();
             
-            // NOTE: Grain amplitude (Hann window) changes per-sample as grain plays
+            // NOTE: Grain amplitude (Hann window + ADSR) changes per-sample as grain plays
             // Don't calculate it once here - calculate inside the sample loop!
-            // float amplitude = particle->getGrainAmplitude (grain); // OLD: causes zipper noise
             
             // Pre-calculate constant amplitude factors (NOT grain envelope - that's per-sample)
             float constantAmplitude = masterGainLinear;
-            // constantAmplitude *= edgeFade.amplitude;  // DISABLED for diagnostic
-            // constantAmplitude *= particle->getInitialVelocityMultiplier();  // DISABLED for diagnostic
+            constantAmplitude *= edgeFade.amplitude;  // Canvas edge fading
+            constantAmplitude *= particle->getInitialVelocityMultiplier();  // MIDI velocity
             
             // NOTE: Can't skip grains based on amplitude here since it changes per-sample
             // Grain amplitude will be calculated in the sample loop below
