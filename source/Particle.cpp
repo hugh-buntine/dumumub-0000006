@@ -574,9 +574,36 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(cachedTotalGrainSamples);
     normalizedPos = juce::jlimit (0.0f, 1.0f, normalizedPos);
     
-    // DIAGNOSTIC: Calculate Hann window directly instead of lookup table
+    // Calculate Hann window directly with minimum fade protection
+    // For very short grains, ensure we have at least a few samples of fade in/out
     const float pi = juce::MathConstants<float>::pi;
-    float grainEnvelope = 0.5f * (1.0f - std::cos(2.0f * pi * normalizedPos));
+    
+    // Minimum fade samples (prevents clicks on very short grains)
+    const int minFadeSamples = 4; // At 44.1kHz, this is ~0.09ms - inaudible but prevents clicks
+    
+    float grainEnvelope;
+    
+    if (cachedTotalGrainSamples <= minFadeSamples * 2)
+    {
+        // Grain too short for normal Hann - use simple linear fade
+        int halfGrain = cachedTotalGrainSamples / 2;
+        if (grainPos < halfGrain)
+        {
+            // Fade in
+            grainEnvelope = static_cast<float>(grainPos) / static_cast<float>(halfGrain);
+        }
+        else
+        {
+            // Fade out
+            grainEnvelope = static_cast<float>(cachedTotalGrainSamples - grainPos) / static_cast<float>(halfGrain);
+        }
+        grainEnvelope = juce::jlimit(0.0f, 1.0f, grainEnvelope);
+    }
+    else
+    {
+        // Normal Hann window
+        grainEnvelope = 0.5f * (1.0f - std::cos(2.0f * pi * normalizedPos));
+    }
     
     // Validate result - check for NaN or infinity
     if (!std::isfinite(grainEnvelope))

@@ -563,6 +563,26 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (particles.isEmpty())
         return;
     
+    // Count total active grains for automatic gain compensation
+    int totalActiveGrains = 0;
+    for (auto* particle : particles)
+    {
+        totalActiveGrains += particle->getActiveGrains().size();
+    }
+    
+    // Automatic gain compensation to prevent clipping when many grains overlap
+    // Use a smooth curve that doesn't reduce gain too much for reasonable grain counts
+    float gainCompensation = 1.0f;
+    if (totalActiveGrains > 1)
+    {
+        // Gentle compression curve: reduces gain as grain count increases
+        // At 4 grains: ~0.7x, at 8 grains: ~0.5x, at 16 grains: ~0.35x
+        gainCompensation = 1.0f / std::sqrt(static_cast<float>(totalActiveGrains));
+        
+        // Clamp to reasonable range (never reduce by more than 90%)
+        gainCompensation = juce::jmax(0.1f, gainCompensation);
+    }
+    
     // Process each particle's grains
     for (auto* particle : particles)
     {
@@ -613,6 +633,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             float constantAmplitude = masterGainLinear;
             constantAmplitude *= edgeFade.amplitude;  // Canvas edge fading
             constantAmplitude *= particle->getInitialVelocityMultiplier();  // MIDI velocity
+            constantAmplitude *= gainCompensation;  // Automatic gain reduction to prevent clipping when many grains overlap
             
             // NOTE: Can't skip grains based on amplitude here since it changes per-sample
             // Grain amplitude will be calculated in the sample loop below
@@ -705,8 +726,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 float maxSample = juce::jmax(y0, y1, y2, y3);
                 audioSample = juce::jlimit(minSample, maxSample, audioSample);
                 
-                // Denormal protection: flush very small numbers to zero to prevent CPU thrashing and noise
-                if (std::abs(audioSample) < 1e-8f)
+                // Aggressive denormal protection: flush very small numbers to zero
+                // This prevents CPU thrashing and eliminates quiet static/artifacts
+                if (std::abs(audioSample) < 1e-6f)  // Increased threshold from 1e-8f
                     audioSample = 0.0f;
                 
                 // CRITICAL FIX: Calculate grain amplitude PER-SAMPLE as grain plays through
@@ -715,18 +737,37 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 currentGrain.playbackPosition = grainPosition + i;
                 float grainAmplitude = particle->getGrainAmplitude (currentGrain);
                 
+                // Denormal protection on amplitude to prevent quiet static
+                if (std::abs(grainAmplitude) < 1e-6f)
+                    grainAmplitude = 0.0f;
+                
                 // Combine grain envelope with constant amplitude factors
                 float totalAmplitude = grainAmplitude * constantAmplitude;
+                
+                // Final denormal check on total amplitude
+                if (std::abs(totalAmplitude) < 1e-6f)
+                    continue; // Skip this sample entirely if amplitude is negligible
                 
                 // Calculate final stereo gains (apply amplitude modulation to cached pan gains)
                 float leftGain = leftPanGain * totalAmplitude;
                 float rightGain = rightPanGain * totalAmplitude;
                 
+                // Calculate final samples with soft clipping protection
+                float leftSample = audioSample * leftGain;
+                float rightSample = audioSample * rightGain;
+                
+                // Soft clip to prevent harsh digital clipping (tanh provides smooth saturation)
+                // Only apply if signal is hot (> 0.9) to avoid unnecessary processing
+                if (std::abs(leftSample) > 0.9f)
+                    leftSample = std::tanh(leftSample * 0.9f) / 0.9f; // Normalize back
+                if (std::abs(rightSample) > 0.9f)
+                    rightSample = std::tanh(rightSample * 0.9f) / 0.9f;
+                
                 // Write to output with panning using direct pointer access
                 if (leftChannel)
-                    leftChannel[i] += audioSample * leftGain;
+                    leftChannel[i] += leftSample;
                 if (rightChannel)
-                    rightChannel[i] += audioSample * rightGain;
+                    rightChannel[i] += rightSample;
             }
             
             // Clean up temporary pointer array
