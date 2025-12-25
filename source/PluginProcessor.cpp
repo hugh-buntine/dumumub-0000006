@@ -507,12 +507,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
-    LOG_INFO("processBlock: About to process " + juce::String(midiMessages.getNumEvents()) + " MIDI messages, canvas=" + juce::String(canvas != nullptr ? "valid" : "null"));
-
     // Process MIDI messages to spawn particles or trigger release
     for (const auto metadata : midiMessages)
     {
-        LOG_INFO("Processing MIDI message in loop");
         auto message = metadata.getMessage();
         
         if (message.isNoteOn())
@@ -568,6 +565,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     for (auto* particle : particles)
     {
         totalActiveGrains += particle->getActiveGrains().size();
+    }
+    
+    // TEST 6: Log grain statistics when count changes significantly
+    static int lastLoggedGrainCount = 0;
+    if (totalActiveGrains > 0 && std::abs(totalActiveGrains - lastLoggedGrainCount) >= 5)
+    {
+        LOG_MESSAGE("[TEST 6] GRAIN COUNT CHANGED: " + juce::String(totalActiveGrains) + " grains active (was " + juce::String(lastLoggedGrainCount) + ")");
+        lastLoggedGrainCount = totalActiveGrains;
     }
     
     // Automatic gain compensation to prevent clipping when many grains overlap
@@ -661,11 +666,22 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             float* leftChannel = totalNumOutputChannels >= 1 ? buffer.getWritePointer (0) : nullptr;
             float* rightChannel = totalNumOutputChannels >= 2 ? buffer.getWritePointer (1) : nullptr;
             
+            // TEST 6: Track diagnostics for this grain
+            static int boundsViolationCount = 0;
+            static int lastLoggedGrainCount = -1;
+            
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
                 // Calculate source position with pitch shift (float for interpolation)
                 float sourcePosition = grainStartSample + ((grainPosition + i) * pitchShift);
+                
+                // WRAP around buffer boundaries to prevent reading past the end
+                // This allows grains to seamlessly loop from end back to start
+                while (sourcePosition >= bufferLength)
+                    sourcePosition -= bufferLength;
+                while (sourcePosition < 0)
+                    sourcePosition += bufferLength;
                 
                 // Cubic (Hermite) interpolation for smoother pitch shift (eliminates aliasing noise)
                 // Uses 4 samples: y0, y1, y2, y3 where we interpolate between y1 and y2
@@ -673,8 +689,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 
                 // CRITICAL BOUNDS CHECK: Prevent reading outside buffer (major source of static/noise)
                 // Need room for 4 samples (cubic interpolation requires s-1, s, s+1, s+2)
+                // After wrapping, we still need to check bounds for cubic interpolation safety
                 if (sourceSample < 1 || sourceSample >= bufferLength - 2)
                 {
+                    // TEST 6: Log boundary violations (these cause silence which might create clicks)
+                    boundsViolationCount++;
+                    if (boundsViolationCount % 100 == 1) // Log every 100th violation to avoid spam
+                    {
+                        LOG_MESSAGE("[TEST 6] BOUNDARY VIOLATION: sourceSample=" + juce::String(sourceSample) + 
+                                   ", bufferLength=" + juce::String(bufferLength) + 
+                                   ", grainStart=" + juce::String(grainStartSample) +
+                                   ", pitchShift=" + juce::String(pitchShift) +
+                                   ", totalViolations=" + juce::String(boundsViolationCount));
+                    }
+                    
                     // Outside safe bounds - output silence instead of garbage memory
                     // This prevents static noise when grains read near buffer edges
                     if (leftChannel)
@@ -736,6 +764,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 Grain currentGrain = grain;
                 currentGrain.playbackPosition = grainPosition + i;
                 float grainAmplitude = particle->getGrainAmplitude (currentGrain);
+                
+                // TEST 6: Validate amplitude calculation results
+                static int invalidAmplitudeCount = 0;
+                if (!std::isfinite(grainAmplitude))
+                {
+                    invalidAmplitudeCount++;
+                    if (invalidAmplitudeCount % 100 == 1)
+                    {
+                        LOG_MESSAGE("[TEST 6] INVALID AMPLITUDE: grainAmplitude=" + juce::String(grainAmplitude) + 
+                                   " (NaN or Inf), playbackPos=" + juce::String(currentGrain.playbackPosition) +
+                                   ", totalInvalid=" + juce::String(invalidAmplitudeCount));
+                    }
+                    grainAmplitude = 0.0f; // Force to zero instead of propagating NaN
+                }
                 
                 // Denormal protection on amplitude to prevent quiet static
                 if (std::abs(grainAmplitude) < 1e-6f)

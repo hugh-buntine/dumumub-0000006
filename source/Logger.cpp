@@ -14,19 +14,9 @@ void Logger::initialize(const juce::String& logFileName, const juce::String& wel
         return;
     }
     
-    // Get the current executable's directory and go up to find the project root
-    auto executableFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
-    auto projectDir = executableFile.getParentDirectory() // MacOS folder
-                        .getParentDirectory()              // Contents folder
-                        .getParentDirectory()              // .app folder
-                        .getParentDirectory()              // Standalone folder
-                        .getParentDirectory()              // Debug/Release folder
-                        .getParentDirectory()              // dumumub-0000006_artefacts folder
-                        .getParentDirectory()              // build folder
-                        .getParentDirectory();             // project root
-    
-    // Create logs directory in project root
-    auto logsDir = projectDir.getChildFile("logs");
+    // Use a fixed path to the project logs directory
+    // This works for both Standalone and AU/VST3 plugins
+    auto logsDir = juce::File("/Users/hughbuntine/Desktop/DUMUMUB/DUMUMUB PLUGINS/dumumub-0000006/logs");
     
     // Create the directory if it doesn't exist
     if (!logsDir.exists())
