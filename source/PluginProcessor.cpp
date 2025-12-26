@@ -637,16 +637,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             particle->triggerNewGrain (audioFileBuffer.getNumSamples());
         }
         
-        // Update all grains (advance playback, remove finished)
-        particle->updateGrains (buffer.getNumSamples());
-        
         // Get all active grains for this particle
         auto& grains = particle->getActiveGrains();
         
         // Skip particles with no active grains (silent - no audio output)
-        // IMPORTANT: Check AFTER triggering/updating grains so new particles can start!
         if (grains.empty())
+        {
+            // Even if no grains to render, still update particle state for next buffer
+            particle->updateGrains (buffer.getNumSamples());
             continue;
+        }
         
         // Process each active grain
         for (auto& grain : grains)
@@ -902,6 +902,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Clean up temporary pointer array
             delete[] sourceChannelPointers;
         }
+        
+        // FIX: Update grains AFTER rendering them, not before!
+        // This ensures new grains start at position 0 and get their full fade-in
+        // Old behavior: triggerGrain(pos=0) -> updateGrains(pos=512) -> render(pos=512) = CLICK!
+        // New behavior: triggerGrain(pos=0) -> render(pos=0) -> updateGrains(pos=512) = SMOOTH!
+        particle->updateGrains (buffer.getNumSamples());
     }
 }
 
