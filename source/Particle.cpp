@@ -625,7 +625,15 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     
     int grainPos = grain.playbackPosition;
     
-    // Log first few samples of first few grains to see windowing behavior
+    // **CRITICAL FIX: Handle grain position beyond grain size**
+    // When processing buffers, position can jump past the grain end (e.g., 10752 + 512 = 11264 > 11201)
+    // In this case, treat it as fully faded out to prevent abrupt cutoff
+    if (grainPos >= cachedTotalGrainSamples)
+    {
+        return 0.0f; // Grain has finished, fully faded out
+    }
+    
+    // Log grain envelope values at START and END to verify proper fade-in/fade-out
     static int grainCallCount = 0;
     static int lastLoggedGrainStart = -1;
     bool isNewGrain = (grain.startSample != lastLoggedGrainStart);
@@ -636,69 +644,75 @@ float Particle::getGrainAmplitude (const Grain& grain) const
         lastLoggedGrainStart = grain.startSample;
     }
     
-    // Log first 3 grains, first 5 samples of each
-    if (grainCallCount <= 3 && grainPos < 5)
+    // Log first 3 grains: first 5 samples AND last 5 samples to verify envelope reaches zero
+    bool shouldLog = grainCallCount <= 3 && 
+                     (grainPos < 5 || grainPos >= cachedTotalGrainSamples - 220);  // Log entire fade-out region (5ms)
+    
+    if (shouldLog)
     {
-        // Calculate what the envelope will be (peek ahead before actual calculation)
-        float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(cachedTotalGrainSamples);
-        normalizedPos = juce::jlimit (0.0f, 1.0f, normalizedPos);
-        const float pi = juce::MathConstants<float>::pi;
-        float peekEnvelope = 0.5f * (1.0f - std::cos(2.0f * pi * normalizedPos));
-        
-        LOG_INFO("GRAIN #" + juce::String(grainCallCount) + " sample #" + juce::String(grainPos) + 
+        juce::String position = grainPos < 5 ? "START" : "END";
+        LOG_INFO("GRAIN #" + juce::String(grainCallCount) + " " + position + " sample #" + juce::String(grainPos) + 
                 ": grainStart=" + juce::String(grain.startSample) + 
                 ", totalSamples=" + juce::String(cachedTotalGrainSamples) +
-                ", normalizedPos=" + juce::String(normalizedPos, 4) + 
-                ", Hann=" + juce::String(peekEnvelope, 4) +
-                ", ADSR=" + juce::String(adsrAmplitude, 4) +
-                ", final=" + juce::String(peekEnvelope * adsrAmplitude, 4));
+                ", grainPos=" + juce::String(grainPos));
     }
     
-    // Normalize position to 0.0-1.0 range
-    float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(cachedTotalGrainSamples);
-    normalizedPos = juce::jlimit (0.0f, 1.0f, normalizedPos);
+    // **FIXED-DURATION FADE-IN/FADE-OUT to prevent clicks**
+    // Problem: Applying Hann window to entire grain creates extremely slow fade-in for long grains
+    // For 254ms grain (11,201 samples), Hann values at start are ~0.0000002, causing clicks
+    // Solution: Use fixed 5ms fade-in/fade-out regardless of grain size
     
-    // Calculate Hann window directly with minimum fade protection
-    // For very short grains, ensure we have at least a few samples of fade in/out
-    const float pi = juce::MathConstants<float>::pi;
+    const int fadeSamples = static_cast<int>(0.005f * currentSampleRate); // 5ms = ~220 samples @ 44.1kHz
+    const int halfGrain = cachedTotalGrainSamples / 2;
     
-    // Minimum fade samples (prevents clicks on very short grains)
-    const int minFadeSamples = 4; // At 44.1kHz, this is ~0.09ms - inaudible but prevents clicks
+    float grainEnvelope = 1.0f; // Default to full volume in middle of grain
     
-    float grainEnvelope;
-    
-    if (cachedTotalGrainSamples <= minFadeSamples * 2)
+    if (grainPos < fadeSamples)
     {
-        // Grain too short for normal Hann - use simple linear fade
-        // Log this only once per session as it indicates a potential problem
-        static bool hasLoggedShortGrain = false;
-        if (!hasLoggedShortGrain)
-        {
-            LOG_WARNING("Using LINEAR FADE for very short grain (" + 
-                       juce::String(cachedTotalGrainSamples) + " samples, " +
-                       juce::String((float)cachedTotalGrainSamples / 44100.0f * 1000.0f, 2) + 
-                       " ms @ 44.1kHz) - may cause clicks");
-            hasLoggedShortGrain = true;
-        }
+        // FADE IN: First 5ms uses Hann window for smooth attack
+        float fadeNormalizedPos = static_cast<float>(grainPos) / static_cast<float>(fadeSamples);
+        fadeNormalizedPos = juce::jlimit (0.0f, 1.0f, fadeNormalizedPos);
+        grainEnvelope = getHannWindowValue(fadeNormalizedPos);
         
-        int halfGrain = cachedTotalGrainSamples / 2;
-        if (grainPos < halfGrain)
+        if (shouldLog)
         {
-            // Fade in
-            grainEnvelope = static_cast<float>(grainPos) / static_cast<float>(halfGrain);
+            LOG_INFO("  → FADE IN: fadePos=" + juce::String(fadeNormalizedPos, 4) + 
+                    ", Hann=" + juce::String(grainEnvelope, 6) + 
+                    ", ADSR=" + juce::String(adsrAmplitude, 4) +
+                    ", final=" + juce::String(grainEnvelope * adsrAmplitude, 6));
         }
-        else
-        {
-            // Fade out
-            grainEnvelope = static_cast<float>(cachedTotalGrainSamples - grainPos) / static_cast<float>(halfGrain);
-        }
-        grainEnvelope = juce::jlimit(0.0f, 1.0f, grainEnvelope);
     }
-    else
+    else if (grainPos >= cachedTotalGrainSamples - fadeSamples)
     {
-        // Normal Hann window
-        grainEnvelope = 0.5f * (1.0f - std::cos(2.0f * pi * normalizedPos));
+        // FADE OUT: Last 5ms uses Hann window for smooth release
+        // At grainPos = (total - fadeSamples), samplesToEnd = fadeSamples, we want Hann = 1.0 (full volume)
+        // At grainPos = (total - 1), samplesToEnd = 1, we want Hann ≈ 0.0 (silence)
+        int samplesToEnd = cachedTotalGrainSamples - grainPos;
+        
+        // Map samplesToEnd to Hann window position
+        // When samplesToEnd = fadeSamples (220), we want Hann = 1.0 (peak, at position 0.5)
+        // When samplesToEnd = 0, we want Hann = 0.0 (end, at position 1.0)
+        // So: Hann position goes from 0.5 to 1.0 as samplesToEnd goes from fadeSamples to 0
+        float fadeNormalizedPos = static_cast<float>(samplesToEnd) / static_cast<float>(fadeSamples);
+        fadeNormalizedPos = juce::jlimit (0.0f, 1.0f, fadeNormalizedPos);
+        
+        // Map 1.0→0.0 to 0.5→1.0 for descending half of Hann curve
+        float hannPos = 0.5f + (1.0f - fadeNormalizedPos) * 0.5f;
+        grainEnvelope = getHannWindowValue(hannPos);
+        
+        // Log to verify fade-out is actually happening
+        static int fadeOutSampleCount = 0;
+        fadeOutSampleCount++;
+        if (shouldLog || fadeOutSampleCount <= 20)  // Log first 20 fade-out samples ever
+        {
+            LOG_INFO("  → FADE OUT: samplesToEnd=" + juce::String(samplesToEnd) + 
+                    ", fadePos=" + juce::String(fadeNormalizedPos, 4) + 
+                    ", hannPos=" + juce::String(hannPos, 4) +
+                    ", Hann=" + juce::String(grainEnvelope, 6) + 
+                    ", final=" + juce::String(grainEnvelope, 6));
+        }
     }
+    // else: middle section stays at 1.0 (full volume)
     
     // Validate result - check for NaN or infinity
     if (!std::isfinite(grainEnvelope))
@@ -707,8 +721,8 @@ float Particle::getGrainAmplitude (const Grain& grain) const
         invalidEnvelopeCount++;
         if (invalidEnvelopeCount % 500 == 1)
         {
-            LOG_ERROR("INVALID ENVELOPE VALUE (NaN/Inf): normalizedPos = " + 
-                     juce::String(normalizedPos, 4) + 
+            LOG_ERROR("INVALID ENVELOPE VALUE (NaN/Inf): grainPos = " + 
+                     juce::String(grainPos) + " / " + juce::String(cachedTotalGrainSamples) +
                      " (occurrence #" + juce::String(invalidEnvelopeCount) + ")");
         }
         grainEnvelope = 0.0f;

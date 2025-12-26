@@ -180,8 +180,9 @@ void SpawnPoint::showMenu()
 
 void SpawnPoint::mouseDrag (const juce::MouseEvent& event)
 {
-    LOG_INFO("SpawnPoint::mouseDrag - Event position: (" + 
-             juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + ")");
+    // Removed excessive logging - was cluttering log files
+    // LOG_INFO("SpawnPoint::mouseDrag - Event position: (" + 
+    //          juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + ")");
     
     // Constrain dragging to parent component bounds if parent exists
     if (getParentComponent() != nullptr)
@@ -193,8 +194,9 @@ void SpawnPoint::mouseDrag (const juce::MouseEvent& event)
     // Perform the drag
     dragger.dragComponent (this, event, &constrainer);
     
-    LOG_INFO("SpawnPoint::mouseDrag - New position: (" + 
-             juce::String(getX()) + ", " + juce::String(getY()) + ")");
+    // Removed excessive logging - was cluttering log files
+    // LOG_INFO("SpawnPoint::mouseDrag - New position: (" + 
+    //          juce::String(getX()) + ", " + juce::String(getY()) + ")");
     
     // Notify parent that spawn point moved (so arrow can be redrawn)
     if (onSpawnPointMoved)

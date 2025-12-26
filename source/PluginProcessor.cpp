@@ -845,9 +845,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     grainAmplitude = 0.0f; // Force to zero instead of propagating NaN
                 }
                 
-                // Denormal protection on amplitude to prevent quiet static
-                if (std::abs(grainAmplitude) < 1e-6f)
-                    grainAmplitude = 0.0f;
+                // NOTE: Removed denormal protection on grainAmplitude - we NEED the tiny fade-in values!
+                // The Hann window naturally produces very small values at the start (< 1e-6)
+                // Forcing these to zero defeats the purpose of the fade-in and causes clicks
                 
                 // Combine grain envelope with constant amplitude factors
                 float totalAmplitude = grainAmplitude * constantAmplitude;
