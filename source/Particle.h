@@ -23,6 +23,7 @@ struct Grain
     int playbackPosition = 0;   // Current playback position within this grain
     int totalSamples = 0;       // Total size of THIS grain (captured at creation time)
     bool active = true;         // Is this grain still playing?
+    int samplesRenderedThisBuffer = 0; // BUG #14 FIX: Track actual samples rendered per buffer
     
     Grain (int start, int size) : startSample (start), totalSamples (size) {}
 };

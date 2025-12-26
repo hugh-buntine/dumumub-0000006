@@ -139,10 +139,17 @@ void Particle::updateGrains (int numSamples)
     static int totalGrainsRemoved = 0;
     int grainsBeforeUpdate = activeGrains.size();
     
-    // Update all active grains
+    // BUG #14 FIX: Update each grain by its ACTUAL samples rendered, not buffer size
+    // This prevents the 482-sample overshoot that causes grains to be removed mid-fade
     for (auto& grain : activeGrains)
     {
-        grain.playbackPosition += numSamples;
+        // Use per-grain sample count if tracked, otherwise fall back to buffer size
+        // (Fall back handles case where grain wasn't rendered this buffer, e.g. empty grains list)
+        int advanceAmount = (grain.samplesRenderedThisBuffer > 0) 
+                          ? grain.samplesRenderedThisBuffer 
+                          : numSamples;
+        
+        grain.playbackPosition += advanceAmount;
         
         // Mark as inactive if finished
         if (grain.playbackPosition >= cachedTotalGrainSamples)
@@ -157,7 +164,8 @@ void Particle::updateGrains (int numSamples)
                         ": startSample=" + juce::String(grain.startSample) +
                         ", finalPos=" + juce::String(grain.playbackPosition) + 
                         ", grainSize=" + juce::String(cachedTotalGrainSamples) +
-                        " (pos went past size by " + juce::String(grain.playbackPosition - cachedTotalGrainSamples) + ")");
+                        ", advanced=" + juce::String(advanceAmount) +
+                        " (overshoot: " + juce::String(grain.playbackPosition - cachedTotalGrainSamples) + ")");
             }
         }
     }
@@ -689,6 +697,16 @@ float Particle::getGrainAmplitude (const Grain& grain) const
         // Scale to first half of Hann curve: input 0.0 gives Hann(0.0)=0.0, input 0.5 gives Hann(0.5)=1.0
         float hannPos = fadeProgress * 0.5f; // Maps 0.0→1.0 to 0.0→0.5
         grainEnvelope = getHannWindowValue(hannPos);
+        
+        // Log critical fade-in points
+        static int fadeInLogCount = 0;
+        if (fadeInLogCount < 10 && (grainPos == 0 || grainPos == actualFadeInSamples - 1))
+        {
+            LOG_INFO("FADE-IN at pos=" + juce::String(grainPos) + 
+                    ", envelope=" + juce::String(grainEnvelope, 6) +
+                    ", fadeProgress=" + juce::String(fadeProgress, 4));
+            fadeInLogCount++;
+        }
     }
     else if (grainPos >= grainTotalSamples - actualFadeOutSamples)
     {
@@ -703,6 +721,17 @@ float Particle::getGrainAmplitude (const Grain& grain) const
         // Scale to second half of Hann curve: 0.0 gives Hann(0.5)=1.0, 1.0 gives Hann(1.0)=0.0
         float hannPos = 0.5f + (fadeProgress * 0.5f); // Maps 0.0→1.0 to 0.5→1.0
         grainEnvelope = getHannWindowValue(hannPos);
+        
+        // Log critical fade-out points
+        static int fadeOutLogCount = 0;
+        if (fadeOutLogCount < 10 && (samplesToEnd <= 1 || samplesToEnd == actualFadeOutSamples))
+        {
+            LOG_INFO("FADE-OUT at pos=" + juce::String(grainPos) + 
+                    ", samplesToEnd=" + juce::String(samplesToEnd) +
+                    ", envelope=" + juce::String(grainEnvelope, 6) +
+                    ", fadeProgress=" + juce::String(fadeProgress, 4));
+            fadeOutLogCount++;
+        }
     }
     // else: middle section stays at 1.0 (full volume)
     

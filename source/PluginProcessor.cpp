@@ -627,6 +627,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Get all active grains for this particle
         auto& grains = particle->getActiveGrains();
         
+        // BUG #14 FIX: Reset per-buffer sample count for each grain
+        for (auto& grain : grains)
+        {
+            grain.samplesRenderedThisBuffer = 0;
+        }
+        
         // Skip particles with no active grains (silent - no audio output)
         if (grains.empty())
         {
@@ -699,9 +705,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             float* leftChannel = totalNumOutputChannels >= 1 ? buffer.getWritePointer (0) : nullptr;
             float* rightChannel = totalNumOutputChannels >= 2 ? buffer.getWritePointer (1) : nullptr;
             
-            // Track diagnostics for boundary violations
-            static int boundsViolationCount = 0;
-            
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
@@ -719,44 +722,23 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Uses 4 samples: y0, y1, y2, y3 where we interpolate between y1 and y2
                 int sourceSample = static_cast<int>(sourcePosition);
                 
-                // CRITICAL BOUNDS CHECK: Prevent reading outside buffer (major source of static/noise)
-                // Need room for 4 samples (cubic interpolation requires s-1, s, s+1, s+2)
-                // After wrapping, we still need to check bounds for cubic interpolation safety
-                if (sourceSample < 1 || sourceSample >= bufferLength - 2)
-                {
-                    // Log boundary violations (these cause silence which might create clicks)
-                    boundsViolationCount++;
-                    if (boundsViolationCount % 1000 == 1) // Log every 1000th violation to avoid spam
-                    {
-                        LOG_ERROR("BUFFER BOUNDS VIOLATION: sourceSample=" + juce::String(sourceSample) + 
-                                   ", bufferLength=" + juce::String(bufferLength) + 
-                                   ", grainStart=" + juce::String(grainStartSample) +
-                                   ", pitchShift=" + juce::String(pitchShift, 3) +
-                                   " (count: " + juce::String(boundsViolationCount) + ")");
-                    }
-                    
-                    // Outside safe bounds - output silence instead of garbage memory
-                    // This prevents static noise when grains read near buffer edges
-                    if (leftChannel)
-                        leftChannel[i] += 0.0f;
-                    if (rightChannel)
-                        rightChannel[i] += 0.0f;
-                    continue;
-                }
-                
+                // BUG #15 & #16 FIX: Properly wrap indices for cubic interpolation
+                // Instead of returning silence at boundaries, wrap all 4 sample indices
+                // This allows seamless wraparound from end to start of audio file
                 float fraction = sourcePosition - sourceSample;
-                
-                // Clamp fraction to [0,1] to prevent interpolation artifacts from FP errors
                 fraction = juce::jlimit(0.0f, 1.0f, fraction);
                 
-                // Get 4 sample indices for cubic interpolation
-                int s0 = sourceSample - 1;
-                int s1 = sourceSample;
-                int s2 = sourceSample + 1;
-                int s3 = sourceSample + 2;
+                // Get 4 sample indices for cubic interpolation with wrapping
+                auto wrapIndex = [bufferLength](int index) -> int {
+                    while (index < 0) index += bufferLength;
+                    while (index >= bufferLength) index -= bufferLength;
+                    return index;
+                };
                 
-                // All indices are now guaranteed to be in valid range [0, bufferLength-1]
-                // No wrapping needed - we've already bounds-checked above
+                int s0 = wrapIndex(sourceSample - 1);
+                int s1 = wrapIndex(sourceSample);
+                int s2 = wrapIndex(sourceSample + 1);
+                int s3 = wrapIndex(sourceSample + 2);
                 
                 // Get audio samples and mix channels
                 float y0 = 0.0f, y1 = 0.0f, y2 = 0.0f, y3 = 0.0f;
@@ -847,6 +829,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     rightChannel[i] += rightSample;
             }
             
+            // BUG #14 FIX: Track how many samples this grain actually rendered
+            grain.samplesRenderedThisBuffer = samplesToRender;
+            
             // Clean up temporary pointer array
             delete[] sourceChannelPointers;
         }
@@ -856,6 +841,50 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Old behavior: triggerGrain(pos=0) -> updateGrains(pos=512) -> render(pos=512) = CLICK!
         // New behavior: triggerGrain(pos=0) -> render(pos=0) -> updateGrains(pos=512) = SMOOTH!
         particle->updateGrains (buffer.getNumSamples());
+    }
+    
+    // DIAGNOSTIC: Detect buffer discontinuities (clicks)
+    if (totalNumOutputChannels >= 1)
+    {
+        float* leftChannel = buffer.getWritePointer(0);
+        static float lastSample = 0.0f;
+        static int clickCount = 0;
+        static int lastClickSample = -1000;
+        static int totalBuffersChecked = 0;
+        static float maxJumpSeen = 0.0f;
+        
+        totalBuffersChecked++;
+        
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            float currentSample = leftChannel[i];
+            float sampleDiff = std::abs(currentSample - lastSample);
+            
+            // Track maximum jump seen
+            if (sampleDiff > maxJumpSeen)
+                maxJumpSeen = sampleDiff;
+            
+            // Lowered threshold from 0.1 to 0.01 to catch smaller clicks
+            if (sampleDiff > 0.01f && clickCount < 50 && (i - lastClickSample) > 100)
+            {
+                LOG_WARNING("DISCONTINUITY DETECTED at sample " + juce::String(i) + 
+                           ": " + juce::String(lastSample, 6) + 
+                           " → " + juce::String(currentSample, 6) + 
+                           " (jump=" + juce::String(sampleDiff, 6) + ")");
+                clickCount++;
+                lastClickSample = i;
+            }
+            
+            lastSample = currentSample;
+        }
+        
+        // Log max jump seen every 1000 buffers to verify detection is working
+        if (totalBuffersChecked % 1000 == 0)
+        {
+            LOG_INFO("DISCONTINUITY CHECK: Checked " + juce::String(totalBuffersChecked) + 
+                    " buffers, max jump seen: " + juce::String(maxJumpSeen, 6) +
+                    ", clicks detected: " + juce::String(clickCount));
+        }
     }
     
     // Buffer logging disabled for performance
