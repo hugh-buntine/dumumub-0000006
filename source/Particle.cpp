@@ -92,9 +92,37 @@ void Particle::triggerNewGrain (int bufferLength)
         
         // Remove the oldest grain
         activeGrains.erase (activeGrains.begin() + oldestGrainIndex);
+        
+        // Log voice stealing events (can cause clicks)
+        static int voiceStealCount = 0;
+        voiceStealCount++;
+        if (voiceStealCount % 50 == 1)
+        {
+            LOG_WARNING("VOICE STEALING: Max grains reached (" + juce::String(MAX_GRAINS_PER_PARTICLE) + 
+                       "), removed grain at pos " + juce::String(maxPlaybackPos) +
+                       " (count: " + juce::String(voiceStealCount) + ")");
+        }
     }
     
     int startSample = calculateGrainStartPosition (bufferLength);
+    
+    // Log sudden jumps in grain start position (can cause phase discontinuities/clicks)
+    static int lastStartSample = startSample;
+    static int positionJumpCount = 0;
+    int jumpDistance = std::abs(startSample - lastStartSample);
+    
+    // Only log if jump is >5% of buffer and happens frequently (indicates Y position changing rapidly)
+    if (jumpDistance > bufferLength / 20 && positionJumpCount % 100 == 0)
+    {
+        LOG_WARNING("GRAIN START POSITION JUMP: " + juce::String(lastStartSample) + " -> " + 
+                   juce::String(startSample) + " (delta: " + juce::String(jumpDistance) + 
+                   " samples, may cause phase issues)");
+    }
+    if (jumpDistance > bufferLength / 20)
+        positionJumpCount++;
+    
+    lastStartSample = startSample;
+    
     activeGrains.push_back (Grain (startSample));
     
     // Logging disabled in audio thread to prevent dropouts
@@ -106,6 +134,10 @@ void Particle::updateGrains (int numSamples)
 {
     samplesSinceLastGrainTrigger += numSamples;
     
+    // Track grain removals for click diagnosis
+    static int totalGrainsRemoved = 0;
+    int grainsBeforeUpdate = activeGrains.size();
+    
     // Update all active grains
     for (auto& grain : activeGrains)
     {
@@ -113,7 +145,20 @@ void Particle::updateGrains (int numSamples)
         
         // Mark as inactive if finished
         if (grain.playbackPosition >= cachedTotalGrainSamples)
+        {
             grain.active = false;
+            
+            // Log first few grain completions to see if ending causes clicks
+            totalGrainsRemoved++;
+            if (totalGrainsRemoved <= 5)
+            {
+                LOG_INFO("GRAIN COMPLETED #" + juce::String(totalGrainsRemoved) + 
+                        ": startSample=" + juce::String(grain.startSample) +
+                        ", finalPos=" + juce::String(grain.playbackPosition) + 
+                        ", grainSize=" + juce::String(cachedTotalGrainSamples) +
+                        " (pos went past size by " + juce::String(grain.playbackPosition - cachedTotalGrainSamples) + ")");
+            }
+        }
     }
     
     // Remove finished grains
@@ -566,9 +611,48 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     
     // Safety check: ensure grain size is valid
     if (cachedTotalGrainSamples <= 0)
+    {
+        // Only log this critical error once per particle
+        static bool hasLogged = false;
+        if (!hasLogged)
+        {
+            LOG_ERROR("getGrainAmplitude: Invalid grain size (cachedTotalGrainSamples = " + 
+                     juce::String(cachedTotalGrainSamples) + ")");
+            hasLogged = true;
+        }
         return 0.0f;
+    }
     
     int grainPos = grain.playbackPosition;
+    
+    // Log first few samples of first few grains to see windowing behavior
+    static int grainCallCount = 0;
+    static int lastLoggedGrainStart = -1;
+    bool isNewGrain = (grain.startSample != lastLoggedGrainStart);
+    
+    if (isNewGrain)
+    {
+        grainCallCount++;
+        lastLoggedGrainStart = grain.startSample;
+    }
+    
+    // Log first 3 grains, first 5 samples of each
+    if (grainCallCount <= 3 && grainPos < 5)
+    {
+        // Calculate what the envelope will be (peek ahead before actual calculation)
+        float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(cachedTotalGrainSamples);
+        normalizedPos = juce::jlimit (0.0f, 1.0f, normalizedPos);
+        const float pi = juce::MathConstants<float>::pi;
+        float peekEnvelope = 0.5f * (1.0f - std::cos(2.0f * pi * normalizedPos));
+        
+        LOG_INFO("GRAIN #" + juce::String(grainCallCount) + " sample #" + juce::String(grainPos) + 
+                ": grainStart=" + juce::String(grain.startSample) + 
+                ", totalSamples=" + juce::String(cachedTotalGrainSamples) +
+                ", normalizedPos=" + juce::String(normalizedPos, 4) + 
+                ", Hann=" + juce::String(peekEnvelope, 4) +
+                ", ADSR=" + juce::String(adsrAmplitude, 4) +
+                ", final=" + juce::String(peekEnvelope * adsrAmplitude, 4));
+    }
     
     // Normalize position to 0.0-1.0 range
     float normalizedPos = static_cast<float>(grainPos) / static_cast<float>(cachedTotalGrainSamples);
@@ -586,6 +670,17 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     if (cachedTotalGrainSamples <= minFadeSamples * 2)
     {
         // Grain too short for normal Hann - use simple linear fade
+        // Log this only once per session as it indicates a potential problem
+        static bool hasLoggedShortGrain = false;
+        if (!hasLoggedShortGrain)
+        {
+            LOG_WARNING("Using LINEAR FADE for very short grain (" + 
+                       juce::String(cachedTotalGrainSamples) + " samples, " +
+                       juce::String((float)cachedTotalGrainSamples / 44100.0f * 1000.0f, 2) + 
+                       " ms @ 44.1kHz) - may cause clicks");
+            hasLoggedShortGrain = true;
+        }
+        
         int halfGrain = cachedTotalGrainSamples / 2;
         if (grainPos < halfGrain)
         {
@@ -607,7 +702,17 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     
     // Validate result - check for NaN or infinity
     if (!std::isfinite(grainEnvelope))
+    {
+        static int invalidEnvelopeCount = 0;
+        invalidEnvelopeCount++;
+        if (invalidEnvelopeCount % 500 == 1)
+        {
+            LOG_ERROR("INVALID ENVELOPE VALUE (NaN/Inf): normalizedPos = " + 
+                     juce::String(normalizedPos, 4) + 
+                     " (occurrence #" + juce::String(invalidEnvelopeCount) + ")");
+        }
         grainEnvelope = 0.0f;
+    }
     
     // Combine Hann window with particle ADSR envelope
     return grainEnvelope * adsrAmplitude;

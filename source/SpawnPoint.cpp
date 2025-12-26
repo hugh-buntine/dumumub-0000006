@@ -124,14 +124,23 @@ void SpawnPoint::resized()
 //==============================================================================
 void SpawnPoint::mouseDown (const juce::MouseEvent& event)
 {
+    LOG_INFO("SpawnPoint::mouseDown - Position in component: (" + 
+             juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + 
+             "), Button: " + (event.mods.isLeftButtonDown() ? "Left" : 
+                             event.mods.isRightButtonDown() ? "Right" : "Other") +
+             ", Is popup menu: " + (event.mods.isPopupMenu() ? "Yes" : "No"));
+    
     // Right-click shows menu
     if (event.mods.isPopupMenu())
     {
+        LOG_INFO("SpawnPoint::mouseDown - Showing menu");
         showMenu();
         return;
     }
     
     // Left-click selects the spawn point
+    LOG_INFO("SpawnPoint::mouseDown - Selecting spawn point, was selected: " + 
+             juce::String(selected ? "Yes" : "No"));
     setSelected (true);
     
     // Start dragging the spawn point
@@ -142,6 +151,8 @@ void SpawnPoint::mouseDown (const juce::MouseEvent& event)
 
 void SpawnPoint::showMenu()
 {
+    LOG_INFO("SpawnPoint::showMenu - Opening context menu");
+    
     juce::PopupMenu menu;
     menu.setLookAndFeel (&popupMenuLookAndFeel);
     
@@ -149,13 +160,18 @@ void SpawnPoint::showMenu()
     int spawnPointCount = getSpawnPointCount ? getSpawnPointCount() : 1;
     bool canDelete = spawnPointCount > 1;
     
+    LOG_INFO("SpawnPoint::showMenu - Spawn point count: " + juce::String(spawnPointCount) + 
+             ", Can delete: " + juce::String(canDelete ? "Yes" : "No"));
+    
     menu.addItem (1, "delete", canDelete);
     
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this, canDelete] (int result)
                         {
+                            LOG_INFO("SpawnPoint::showMenu - Menu result: " + juce::String(result));
                             if (result == 1 && canDelete) // Delete
                             {
+                                LOG_INFO("SpawnPoint - Requesting deletion");
                                 if (onDeleteRequested)
                                     onDeleteRequested();
                             }
@@ -164,6 +180,9 @@ void SpawnPoint::showMenu()
 
 void SpawnPoint::mouseDrag (const juce::MouseEvent& event)
 {
+    LOG_INFO("SpawnPoint::mouseDrag - Event position: (" + 
+             juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + ")");
+    
     // Constrain dragging to parent component bounds if parent exists
     if (getParentComponent() != nullptr)
     {
@@ -173,6 +192,9 @@ void SpawnPoint::mouseDrag (const juce::MouseEvent& event)
     
     // Perform the drag
     dragger.dragComponent (this, event, &constrainer);
+    
+    LOG_INFO("SpawnPoint::mouseDrag - New position: (" + 
+             juce::String(getX()) + ", " + juce::String(getY()) + ")");
     
     // Notify parent that spawn point moved (so arrow can be redrawn)
     if (onSpawnPointMoved)
@@ -189,6 +211,7 @@ void SpawnPoint::mouseUp (const juce::MouseEvent& event)
 void SpawnPoint::mouseEnter (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
+    LOG_INFO("SpawnPoint::mouseEnter - Mouse entered spawn point");
     isHovered = true;
     repaint();
 }
@@ -196,6 +219,7 @@ void SpawnPoint::mouseEnter (const juce::MouseEvent& event)
 void SpawnPoint::mouseExit (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
+    LOG_INFO("SpawnPoint::mouseExit - Mouse exited spawn point");
     isHovered = false;
     repaint();
 }

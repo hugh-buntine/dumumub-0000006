@@ -336,15 +336,27 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
 {
     juce::Point<float> mousePos = event.position;
     
+    LOG_INFO("Canvas::mouseDown - Position: (" + juce::String(mousePos.x, 2) + ", " + 
+             juce::String(mousePos.y, 2) + "), Button: " + 
+             (event.mods.isLeftButtonDown() ? "Left" : 
+              event.mods.isRightButtonDown() ? "Right" : "Other") +
+             ", Popup menu: " + (event.mods.isPopupMenu() ? "Yes" : "No"));
+    
     // Right-click shows context menu to add mass or spawn point
     if (event.mods.isPopupMenu())
     {
+        LOG_INFO("Canvas::mouseDown - Showing popup menu");
+        
         juce::PopupMenu menu;
         menu.setLookAndFeel (&popupMenuLookAndFeel);
         
         // Check limits based on break CPU mode
         bool canAddMass = breakCpuMode || massPoints.size() < maxMassPoints;
         bool canAddSpawn = breakCpuMode || spawnPoints.size() < maxSpawnPoints;
+        
+        LOG_INFO("Canvas::mouseDown - Menu options - Can add mass: " + 
+                 juce::String(canAddMass ? "Yes" : "No") + ", Can add spawn: " + 
+                 juce::String(canAddSpawn ? "Yes" : "No"));
         
         // Add menu items (greyed out if at limit and not in break CPU mode)
         menu.addItem (1, "mass", canAddMass);
@@ -358,8 +370,14 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
         menu.showMenuAsync (options,
                            [this, mousePos] (int result)
                            {
+                               LOG_INFO("Canvas::mouseDown - Menu result: " + juce::String(result));
+                               
                                if (result == 1 && (breakCpuMode || massPoints.size() < maxMassPoints))
                                {
+                                   LOG_INFO("Canvas - Adding mass point at (" + 
+                                            juce::String(mousePos.x, 2) + ", " + 
+                                            juce::String(mousePos.y, 2) + ")");
+                                   
                                    // Add mass point to processor first
                                    audioProcessor.addMassPoint (mousePos, 4.0f); // Default to largest mass
                                    
@@ -395,6 +413,10 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                                }
                                else if (result == 2 && (breakCpuMode || spawnPoints.size() < maxSpawnPoints))
                                {
+                                   LOG_INFO("Canvas - Adding spawn point at (" + 
+                                            juce::String(mousePos.x, 2) + ", " + 
+                                            juce::String(mousePos.y, 2) + ")");
+                                   
                                    // Add spawn point to processor first
                                    audioProcessor.addSpawnPoint (mousePos, 0.0f); // Default angle pointing right
                                    
@@ -443,6 +465,7 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
     {
         if (spawn->isSelected() && isMouseNearArrowTip (spawn, mousePos))
         {
+            LOG_INFO("Canvas::mouseDown - Clicked near arrow tip of selected spawn point");
             draggedArrowSpawnPoint = spawn;
             setMouseCursor (juce::MouseCursor::CrosshairCursor);
             LOG_INFO("Started dragging arrow for spawn point");
@@ -452,21 +475,31 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
     
     // Check if clicking on a spawn point or mass point
     bool clickedOnComponent = false;
-    for (auto* spawn : spawnPoints)
+    int clickedSpawnIndex = -1;
+    int clickedMassIndex = -1;
+    
+    for (int i = 0; i < spawnPoints.size(); ++i)
     {
-        if (spawn->getBounds().contains (mousePos.toInt()))
+        if (spawnPoints[i]->getBounds().contains (mousePos.toInt()))
         {
             clickedOnComponent = true;
+            clickedSpawnIndex = i;
+            LOG_INFO("Canvas::mouseDown - Clicked on spawn point #" + juce::String(i) + 
+                     " at bounds: " + spawnPoints[i]->getBounds().toString());
             break;
         }
     }
+    
     if (!clickedOnComponent)
     {
-        for (auto* mass : massPoints)
+        for (int i = 0; i < massPoints.size(); ++i)
         {
-            if (mass->getBounds().contains (mousePos.toInt()))
+            if (massPoints[i]->getBounds().contains (mousePos.toInt()))
             {
                 clickedOnComponent = true;
+                clickedMassIndex = i;
+                LOG_INFO("Canvas::mouseDown - Clicked on mass point #" + juce::String(i) + 
+                         " at bounds: " + massPoints[i]->getBounds().toString());
                 break;
             }
         }
@@ -475,11 +508,18 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
     // If clicking on empty canvas (not on any component), deselect all spawn points
     if (!clickedOnComponent)
     {
+        LOG_INFO("Canvas::mouseDown - Clicked on empty canvas, deselecting all spawn points");
         for (auto* spawn : spawnPoints)
         {
             spawn->setSelected (false);
         }
         repaint(); // Force repaint to hide arrows immediately
+    }
+    else
+    {
+        LOG_INFO("Canvas::mouseDown - Clicked on component (spawn: " + 
+                 juce::String(clickedSpawnIndex) + ", mass: " + 
+                 juce::String(clickedMassIndex) + ")");
     }
     
     // If not clicking on arrow, allow spawn points to handle their own dragging
@@ -497,16 +537,25 @@ void Canvas::mouseDrag (const juce::MouseEvent& event)
         
         // Constrain to min and max length
         float length = newVector.getDistanceFromOrigin();
+        
+        LOG_INFO("Canvas::mouseDrag - Arrow drag - Mouse: (" + juce::String(mousePos.x, 2) + 
+                 ", " + juce::String(mousePos.y, 2) + "), Center: (" + 
+                 juce::String(center.x, 2) + ", " + juce::String(center.y, 2) + 
+                 "), Vector length: " + juce::String(length, 2));
+        
         if (length < minArrowLength)
         {
             if (length > 0.0f)
                 newVector = (newVector / length) * minArrowLength;
             else
                 newVector = juce::Point<float> (minArrowLength, 0.0f); // Default direction if length is 0
+            
+            LOG_INFO("Canvas::mouseDrag - Constrained to min length: " + juce::String(minArrowLength));
         }
         else if (length > maxArrowLength)
         {
             newVector = (newVector / length) * maxArrowLength;
+            LOG_INFO("Canvas::mouseDrag - Constrained to max length: " + juce::String(maxArrowLength));
         }
         
         draggedArrowSpawnPoint->setMomentumVector (newVector);

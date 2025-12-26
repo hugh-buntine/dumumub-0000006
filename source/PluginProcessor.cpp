@@ -21,6 +21,9 @@ PluginProcessor::PluginProcessor()
     Logger::getInstance().initialize("dumumub-0000006.log", "dumumub-0000006 Plugin Logger");
     LOG_INFO("PluginProcessor constructed");
     
+    // Add listener for logging toggle parameter
+    apvts.addParameterListener("enableLogging", this);
+    
     // Initialize Hann window lookup table (shared by all particles)
     Particle::initializeHannTable();
     LOG_INFO("Initialized Hann window lookup table");
@@ -37,6 +40,7 @@ PluginProcessor::PluginProcessor()
 PluginProcessor::~PluginProcessor()
 {
     LOG_INFO("PluginProcessor destroyed");
+    apvts.removeParameterListener("enableLogging", this);
     Logger::getInstance().shutdown();
 }
 
@@ -119,6 +123,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
         [](float value, int) { return juce::String (value, 1) + " dB"; }
+    ));
+    
+    // Logging Toggle (boolean parameter)
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        "enableLogging",
+        "Enable Logging",
+        true  // Default to enabled
     ));
     
     return layout;
@@ -551,6 +562,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     float masterGainDb = apvts.getRawParameterValue("masterGain")->load();
     float masterGainLinear = juce::Decibels::decibelsToGain(masterGainDb);
     
+    // Log sudden grain size changes (can cause clicks)
+    static float lastGrainSize = grainSizeMs;
+    if (std::abs(grainSizeMs - lastGrainSize) > 10.0f) // >10ms change
+    {
+        LOG_WARNING("GRAIN SIZE JUMP: " + juce::String(lastGrainSize, 1) + "ms -> " + 
+                   juce::String(grainSizeMs, 1) + "ms (sudden changes can click)");
+        lastGrainSize = grainSizeMs;
+    }
+    
     // Note: attack and release are now ADSR parameters, not grain envelope parameters
     // Grain crossfade is hardcoded to 50% in Particle::getGrainAmplitude()
     
@@ -567,11 +587,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         totalActiveGrains += particle->getActiveGrains().size();
     }
     
-    // TEST 6: Log grain statistics when count changes significantly
+    // Log only when grain count exceeds safe threshold (potential for clicks)
     static int lastLoggedGrainCount = 0;
-    if (totalActiveGrains > 0 && std::abs(totalActiveGrains - lastLoggedGrainCount) >= 5)
+    if (totalActiveGrains > 50 && std::abs(totalActiveGrains - lastLoggedGrainCount) >= 20)
     {
-        LOG_MESSAGE("[TEST 6] GRAIN COUNT CHANGED: " + juce::String(totalActiveGrains) + " grains active (was " + juce::String(lastLoggedGrainCount) + ")");
+        LOG_WARNING("HIGH GRAIN COUNT: " + juce::String(totalActiveGrains) + 
+                   " active grains (may cause CPU issues/clicks)");
         lastLoggedGrainCount = totalActiveGrains;
     }
     
@@ -600,6 +621,19 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Check if we should trigger a new grain based on frequency
         if (particle->shouldTriggerNewGrain (getSampleRate(), grainFreq))
         {
+            // Log the first few grain triggers for each particle to help diagnose initialization clicks
+            static int totalGrainsTriggered = 0;
+            totalGrainsTriggered++;
+            
+            if (totalGrainsTriggered <= 5)
+            {
+                LOG_INFO("GRAIN TRIGGER #" + juce::String(totalGrainsTriggered) + 
+                        ": grainSize=" + juce::String(grainSizeMs, 2) + "ms, " +
+                        "grainFreq=" + juce::String(grainFreq, 2) + "Hz, " +
+                        "currentGrains=" + juce::String(particle->getActiveGrains().size()) + ", " +
+                        "adsrAmplitude=" + juce::String(particle->getADSRAmplitude(), 4));
+            }
+            
             particle->triggerNewGrain (audioFileBuffer.getNumSamples());
         }
         
@@ -620,6 +654,26 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             int grainStartSample = grain.startSample;
             int grainPosition = grain.playbackPosition;
             int totalGrainSamples = particle->getTotalGrainSamples();
+            
+            // Log first few grains being processed
+            static int processedGrainCount = 0;
+            static int lastLoggedStartSample = -1;
+            bool isNewGrainProcessing = (grain.startSample != lastLoggedStartSample);
+            
+            if (isNewGrainProcessing)
+            {
+                processedGrainCount++;
+                lastLoggedStartSample = grain.startSample;
+                
+                if (processedGrainCount <= 3)
+                {
+                    LOG_INFO("PROCESSING GRAIN #" + juce::String(processedGrainCount) + 
+                            ": startSample=" + juce::String(grainStartSample) +
+                            ", position=" + juce::String(grainPosition) + 
+                            ", totalSize=" + juce::String(totalGrainSamples) +
+                            ", bufferSize=" + juce::String(buffer.getNumSamples()));
+                }
+            }
             
             // Calculate how many samples to render this block
             int samplesToRender = juce::jmin (buffer.getNumSamples(), 
@@ -646,6 +700,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Get pitch shift for this particle
             float pitchShift = particle->getPitchShift();
             
+            // Log extreme pitch shifts (can cause aliasing/clicks)
+            static int extremePitchCount = 0;
+            if (pitchShift < 0.25f || pitchShift > 4.0f)
+            {
+                extremePitchCount++;
+                if (extremePitchCount % 100 == 1)
+                {
+                    LOG_WARNING("EXTREME PITCH SHIFT: " + juce::String(pitchShift, 3) + 
+                               "x (may cause aliasing, count: " + juce::String(extremePitchCount) + ")");
+                }
+            }
+            
             // Calculate stereo pan gains ONCE per grain (cache trig functions)
             float panAngle = (edgeFade.pan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
             float leftPanGain = std::cos (panAngle);
@@ -666,9 +732,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             float* leftChannel = totalNumOutputChannels >= 1 ? buffer.getWritePointer (0) : nullptr;
             float* rightChannel = totalNumOutputChannels >= 2 ? buffer.getWritePointer (1) : nullptr;
             
-            // TEST 6: Track diagnostics for this grain
+            // Track diagnostics for boundary violations
             static int boundsViolationCount = 0;
-            static int lastLoggedGrainCount = -1;
             
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
@@ -692,15 +757,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // After wrapping, we still need to check bounds for cubic interpolation safety
                 if (sourceSample < 1 || sourceSample >= bufferLength - 2)
                 {
-                    // TEST 6: Log boundary violations (these cause silence which might create clicks)
+                    // Log boundary violations (these cause silence which might create clicks)
                     boundsViolationCount++;
-                    if (boundsViolationCount % 100 == 1) // Log every 100th violation to avoid spam
+                    if (boundsViolationCount % 1000 == 1) // Log every 1000th violation to avoid spam
                     {
-                        LOG_MESSAGE("[TEST 6] BOUNDARY VIOLATION: sourceSample=" + juce::String(sourceSample) + 
+                        LOG_ERROR("BUFFER BOUNDS VIOLATION: sourceSample=" + juce::String(sourceSample) + 
                                    ", bufferLength=" + juce::String(bufferLength) + 
                                    ", grainStart=" + juce::String(grainStartSample) +
-                                   ", pitchShift=" + juce::String(pitchShift) +
-                                   ", totalViolations=" + juce::String(boundsViolationCount));
+                                   ", pitchShift=" + juce::String(pitchShift, 3) +
+                                   " (count: " + juce::String(boundsViolationCount) + ")");
                     }
                     
                     // Outside safe bounds - output silence instead of garbage memory
@@ -765,16 +830,17 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 currentGrain.playbackPosition = grainPosition + i;
                 float grainAmplitude = particle->getGrainAmplitude (currentGrain);
                 
-                // TEST 6: Validate amplitude calculation results
+                // Validate amplitude calculation results
                 static int invalidAmplitudeCount = 0;
                 if (!std::isfinite(grainAmplitude))
                 {
                     invalidAmplitudeCount++;
-                    if (invalidAmplitudeCount % 100 == 1)
+                    if (invalidAmplitudeCount % 500 == 1)
                     {
-                        LOG_MESSAGE("[TEST 6] INVALID AMPLITUDE: grainAmplitude=" + juce::String(grainAmplitude) + 
-                                   " (NaN or Inf), playbackPos=" + juce::String(currentGrain.playbackPosition) +
-                                   ", totalInvalid=" + juce::String(invalidAmplitudeCount));
+                        juce::String msg = "INVALID GRAIN AMPLITUDE: NaN or Inf detected, playbackPos=" + 
+                                          juce::String(currentGrain.playbackPosition) +
+                                          " (count: " + juce::String(invalidAmplitudeCount) + ")";
+                        LOG_ERROR(msg.toStdString());
                     }
                     grainAmplitude = 0.0f; // Force to zero instead of propagating NaN
                 }
@@ -797,6 +863,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Calculate final samples with soft clipping protection
                 float leftSample = audioSample * leftGain;
                 float rightSample = audioSample * rightGain;
+                
+                // Detect sudden amplitude spikes that could cause clicks
+                static float lastLeftSample = 0.0f;
+                static float lastRightSample = 0.0f;
+                static int spikeCount = 0;
+                
+                float leftDelta = std::abs(leftSample - lastLeftSample);
+                float rightDelta = std::abs(rightSample - lastRightSample);
+                
+                // Log if we see a very sudden jump (>0.5 change in one sample = click-inducing)
+                if ((leftDelta > 0.5f || rightDelta > 0.5f) && spikeCount < 10)
+                {
+                    spikeCount++;
+                    LOG_WARNING("AMPLITUDE SPIKE #" + juce::String(spikeCount) + 
+                               ": L delta=" + juce::String(leftDelta, 3) + 
+                               ", R delta=" + juce::String(rightDelta, 3) +
+                               " (>0.5 in one sample = likely click)");
+                }
+                
+                lastLeftSample = leftSample;
+                lastRightSample = rightSample;
                 
                 // Soft clip to prevent harsh digital clipping (tanh provides smooth saturation)
                 // Only apply if signal is hot (> 0.9) to avoid unnecessary processing
@@ -1006,6 +1093,18 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
         loadedAudioFile = juce::File();
         audioFileBuffer.setSize (0, 0);
         audioFileSampleRate = 0.0;
+    }
+}
+
+//==============================================================================
+// AudioProcessorValueTreeState::Listener implementation
+void PluginProcessor::parameterChanged (const juce::String& parameterID, float newValue)
+{
+    if (parameterID == "enableLogging")
+    {
+        bool enabled = newValue > 0.5f; // Convert float to bool
+        Logger::getInstance().setLoggingEnabled(enabled);
+        LOG_INFO("Logging toggled via parameter - now " + juce::String(enabled ? "ENABLED" : "DISABLED"));
     }
 }
 

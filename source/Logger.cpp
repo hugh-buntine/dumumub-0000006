@@ -47,7 +47,7 @@ void Logger::initialize(const juce::String& logFileName, const juce::String& wel
 
 void Logger::logMessage(const juce::String& message)
 {
-    if (fileLogger != nullptr)
+    if (fileLogger != nullptr && loggingEnabled)
     {
         fileLogger->logMessage(message);
     }
@@ -55,7 +55,7 @@ void Logger::logMessage(const juce::String& message)
 
 void Logger::logInfo(const juce::String& message)
 {
-    if (fileLogger != nullptr)
+    if (fileLogger != nullptr && loggingEnabled)
     {
         fileLogger->logMessage("[INFO] " + message);
     }
@@ -63,7 +63,7 @@ void Logger::logInfo(const juce::String& message)
 
 void Logger::logWarning(const juce::String& message)
 {
-    if (fileLogger != nullptr)
+    if (fileLogger != nullptr && loggingEnabled)
     {
         fileLogger->logMessage("[WARNING] " + message);
     }
@@ -71,7 +71,7 @@ void Logger::logWarning(const juce::String& message)
 
 void Logger::logError(const juce::String& message)
 {
-    if (fileLogger != nullptr)
+    if (fileLogger != nullptr && loggingEnabled)
     {
         fileLogger->logMessage("[ERROR] " + message);
     }
@@ -80,6 +80,18 @@ void Logger::logError(const juce::String& message)
 juce::String Logger::getLogFilePath() const
 {
     return logFile.getFullPathName();
+}
+
+void Logger::setLoggingEnabled(bool enabled)
+{
+    loggingEnabled = enabled;
+    if (fileLogger != nullptr)
+    {
+        if (enabled)
+            fileLogger->logMessage("[INFO] Logging enabled");
+        else
+            fileLogger->logMessage("[INFO] Logging disabled");
+    }
 }
 
 void Logger::shutdown()

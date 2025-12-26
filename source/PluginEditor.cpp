@@ -78,6 +78,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     graphicsButton.setImages (graphicsButtonUnpressed, graphicsButtonUnpressedHover,
                              graphicsButtonPressed, graphicsButtonPressedHover);
     graphicsButton.onClick = [this]() {
+        LOG_INFO("PluginEditor - Graphics button clicked, new state: " + 
+                 juce::String(graphicsButton.getToggleState() ? "ON" : "OFF"));
         // Update canvas bounce mode based on button state
         canvas.setBounceMode (graphicsButton.getToggleState());
     };
@@ -87,6 +89,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     breakCpuButton.setImages (breakCpuButtonUnpressed, breakCpuButtonUnpressedHover,
                              breakCpuButtonPressed, breakCpuButtonPressedHover);
     breakCpuButton.onClick = [this]() {
+        LOG_INFO("PluginEditor - Break CPU button clicked, new state: " + 
+                 juce::String(breakCpuButton.getToggleState() ? "ON" : "OFF"));
         // Update canvas limits based on button state
         canvas.setBreakCpuMode (breakCpuButton.getToggleState());
     };

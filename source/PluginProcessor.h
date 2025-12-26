@@ -25,7 +25,8 @@ struct SpawnPointData
     float visualRotation = 0.0f; // Current rotation angle for visual animation only
 };
 
-class PluginProcessor : public juce::AudioProcessor
+class PluginProcessor : public juce::AudioProcessor,
+                         public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     PluginProcessor();
@@ -99,6 +100,9 @@ public:
     void setMaxParticles (int max) { maxParticles = max; }
     void setBounceMode (bool enabled);
     bool getBounceMode() const { return bounceMode; }
+    
+    // AudioProcessorValueTreeState::Listener implementation
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)

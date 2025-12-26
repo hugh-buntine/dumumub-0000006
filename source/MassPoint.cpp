@@ -134,9 +134,17 @@ void MassPoint::resized()
 //==============================================================================
 void MassPoint::mouseDown (const juce::MouseEvent& event)
 {
+    LOG_INFO("MassPoint::mouseDown - Position in component: (" + 
+             juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + 
+             "), Button: " + (event.mods.isLeftButtonDown() ? "Left" : 
+                             event.mods.isRightButtonDown() ? "Right" : "Other") +
+             ", Is popup menu: " + (event.mods.isPopupMenu() ? "Yes" : "No") +
+             ", Current radius: " + juce::String(radius));
+    
     // Right-click shows size menu
     if (event.mods.isPopupMenu())
     {
+        LOG_INFO("MassPoint::mouseDown - Showing size menu");
         showSizeMenu();
         return;
     }
@@ -149,6 +157,8 @@ void MassPoint::mouseDown (const juce::MouseEvent& event)
 
 void MassPoint::showSizeMenu()
 {
+    LOG_INFO("MassPoint::showSizeMenu - Opening size menu, current radius: " + juce::String(radius));
+    
     juce::PopupMenu menu;
     menu.setLookAndFeel (&popupMenuLookAndFeel);
     
@@ -162,11 +172,17 @@ void MassPoint::showSizeMenu()
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this] (int result)
                         {
+                            LOG_INFO("MassPoint::showSizeMenu - Menu result: " + juce::String(result));
+                            
                             if (result == 0)
+                            {
+                                LOG_INFO("MassPoint::showSizeMenu - User cancelled");
                                 return; // User cancelled
+                            }
                             
                             if (result == 5)
                             {
+                                LOG_INFO("MassPoint - Requesting deletion");
                                 // Delete request
                                 if (onDeleteRequested)
                                     onDeleteRequested();
@@ -182,6 +198,8 @@ void MassPoint::showSizeMenu()
                                 case 4: newRadius = 200; break;
                             }
                             
+                            LOG_INFO("MassPoint - Setting new radius: " + juce::String(newRadius) + 
+                                     " (was: " + juce::String(radius) + ")");
                             setRadius (newRadius);
                         });
 }
@@ -214,6 +232,9 @@ void MassPoint::setRadius (int newRadius)
 
 void MassPoint::mouseDrag (const juce::MouseEvent& event)
 {
+    LOG_INFO("MassPoint::mouseDrag - Event position: (" + 
+             juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + ")");
+    
     // Constrain dragging so that the CENTER stays within parent bounds
     // (Allow the mass point to extend beyond edges as long as center is inside)
     if (getParentComponent() != nullptr)
@@ -229,6 +250,9 @@ void MassPoint::mouseDrag (const juce::MouseEvent& event)
     
     // Perform the drag
     dragger.dragComponent (this, event, &constrainer);
+    
+    LOG_INFO("MassPoint::mouseDrag - New position: (" + 
+             juce::String(getX()) + ", " + juce::String(getY()) + ")");
     
     // Trigger callback while mass is being moved
     if (onMassMoved)
@@ -249,6 +273,8 @@ void MassPoint::mouseUp (const juce::MouseEvent& event)
 void MassPoint::mouseEnter (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
+    LOG_INFO("MassPoint::mouseEnter - Mouse entered mass point (radius: " + 
+             juce::String(radius) + ")");
     isHovered = true;
     repaint();
 }
@@ -256,6 +282,7 @@ void MassPoint::mouseEnter (const juce::MouseEvent& event)
 void MassPoint::mouseExit (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
+    LOG_INFO("MassPoint::mouseExit - Mouse exited mass point");
     isHovered = false;
     repaint();
 }
