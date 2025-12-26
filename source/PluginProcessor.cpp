@@ -621,19 +621,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Check if we should trigger a new grain based on frequency
         if (particle->shouldTriggerNewGrain (getSampleRate(), grainFreq))
         {
-            // Log the first few grain triggers for each particle to help diagnose initialization clicks
-            static int totalGrainsTriggered = 0;
-            totalGrainsTriggered++;
-            
-            if (totalGrainsTriggered <= 5)
-            {
-                LOG_INFO("GRAIN TRIGGER #" + juce::String(totalGrainsTriggered) + 
-                        ": grainSize=" + juce::String(grainSizeMs, 2) + "ms, " +
-                        "grainFreq=" + juce::String(grainFreq, 2) + "Hz, " +
-                        "currentGrains=" + juce::String(particle->getActiveGrains().size()) + ", " +
-                        "adsrAmplitude=" + juce::String(particle->getADSRAmplitude(), 4));
-            }
-            
             particle->triggerNewGrain (audioFileBuffer.getNumSamples());
         }
         
@@ -654,26 +641,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             int grainStartSample = grain.startSample;
             int grainPosition = grain.playbackPosition;
             int totalGrainSamples = particle->getTotalGrainSamples();
-            
-            // Log first few grains being processed
-            static int processedGrainCount = 0;
-            static int lastLoggedStartSample = -1;
-            bool isNewGrainProcessing = (grain.startSample != lastLoggedStartSample);
-            
-            if (isNewGrainProcessing)
-            {
-                processedGrainCount++;
-                lastLoggedStartSample = grain.startSample;
-                
-                if (processedGrainCount <= 3)
-                {
-                    LOG_INFO("PROCESSING GRAIN #" + juce::String(processedGrainCount) + 
-                            ": startSample=" + juce::String(grainStartSample) +
-                            ", position=" + juce::String(grainPosition) + 
-                            ", totalSize=" + juce::String(totalGrainSamples) +
-                            ", bufferSize=" + juce::String(buffer.getNumSamples()));
-                }
-            }
             
             // Calculate how many samples to render this block
             int samplesToRender = juce::jmin (buffer.getNumSamples(), 
@@ -852,9 +819,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Combine grain envelope with constant amplitude factors
                 float totalAmplitude = grainAmplitude * constantAmplitude;
                 
-                // Final denormal check on total amplitude
-                if (std::abs(totalAmplitude) < 1e-6f)
-                    continue; // Skip this sample entirely if amplitude is negligible
+                // CRITICAL: Don't skip samples even if amplitude is zero!
+                // The first sample of a grain has Hann=0.0 by design (fade-in starts at zero)
+                // Skipping it means the grain jumps from silence to position 1, causing a click
+                // We MUST render the zero-amplitude sample so the grain position advances properly
+                // (The audio output will be zero anyway, so this doesn't add noise)
                 
                 // Calculate final stereo gains (apply amplitude modulation to cached pan gains)
                 float leftGain = leftPanGain * totalAmplitude;
@@ -863,27 +832,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Calculate final samples with soft clipping protection
                 float leftSample = audioSample * leftGain;
                 float rightSample = audioSample * rightGain;
-                
-                // Detect sudden amplitude spikes that could cause clicks
-                static float lastLeftSample = 0.0f;
-                static float lastRightSample = 0.0f;
-                static int spikeCount = 0;
-                
-                float leftDelta = std::abs(leftSample - lastLeftSample);
-                float rightDelta = std::abs(rightSample - lastRightSample);
-                
-                // Log if we see a very sudden jump (>0.5 change in one sample = click-inducing)
-                if ((leftDelta > 0.5f || rightDelta > 0.5f) && spikeCount < 10)
-                {
-                    spikeCount++;
-                    LOG_WARNING("AMPLITUDE SPIKE #" + juce::String(spikeCount) + 
-                               ": L delta=" + juce::String(leftDelta, 3) + 
-                               ", R delta=" + juce::String(rightDelta, 3) +
-                               " (>0.5 in one sample = likely click)");
-                }
-                
-                lastLeftSample = leftSample;
-                lastRightSample = rightSample;
                 
                 // Soft clip to prevent harsh digital clipping (tanh provides smooth saturation)
                 // Only apply if signal is hot (> 0.9) to avoid unnecessary processing
@@ -909,6 +857,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // New behavior: triggerGrain(pos=0) -> render(pos=0) -> updateGrains(pos=512) = SMOOTH!
         particle->updateGrains (buffer.getNumSamples());
     }
+    
+    // Buffer logging disabled for performance
 }
 
 void PluginProcessor::injectMidiMessage (const juce::MidiMessage& message)

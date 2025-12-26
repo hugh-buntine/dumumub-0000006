@@ -21,9 +21,10 @@ struct Grain
 {
     int startSample = 0;        // Where in the audio buffer this grain starts
     int playbackPosition = 0;   // Current playback position within this grain
+    int totalSamples = 0;       // Total size of THIS grain (captured at creation time)
     bool active = true;         // Is this grain still playing?
     
-    Grain (int start) : startSample (start) {}
+    Grain (int start, int size) : startSample (start), totalSamples (size) {}
 };
 
 //==============================================================================
