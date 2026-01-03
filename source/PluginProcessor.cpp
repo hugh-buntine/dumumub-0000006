@@ -993,6 +993,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (totalNumOutputChannels >= 1)
     {
         float* leftChannel = buffer.getWritePointer(0);
+        static float lastBufferEndSample = 0.0f;  // Track end of previous buffer
         static float lastSample = 0.0f;
         static int bufferCount = 0;
         static float maxJumpSeen = 0.0f;
@@ -1001,7 +1002,25 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         
         bufferCount++;
         
-        // Check for sample-to-sample discontinuities in the buffer
+        // CRITICAL: Check for discontinuity BETWEEN buffers (the main click source!)
+        float firstSampleThisBuffer = leftChannel[0];
+        float bufferBoundaryJump = std::abs(firstSampleThisBuffer - lastBufferEndSample);
+        
+        if (bufferBoundaryJump > 0.001f && bufferCount > 1)
+        {
+            clickDetections++;
+            if (clickDetections <= 50)
+            {
+                LOG_WARNING("BUFFER BOUNDARY CLICK: jump=" + juce::String(bufferBoundaryJump, 6) + 
+                           " from buffer end " + juce::String(lastBufferEndSample, 6) + 
+                           " to buffer start " + juce::String(firstSampleThisBuffer, 6) + 
+                           " at buffer #" + juce::String(bufferCount) + 
+                           " (active grains: " + juce::String(totalActiveGrains) + ")");
+            }
+        }
+        
+        // Check for sample-to-sample discontinuities WITHIN the buffer
+        lastSample = lastBufferEndSample;  // Start from end of last buffer
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             float currentSample = leftChannel[i];
@@ -1013,16 +1032,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (jump > maxJumpSeen)
                 maxJumpSeen = jump;
             
-            // ULTRA-SENSITIVE THRESHOLD: Detect clicks at >0.001 (much lower!)
-            // The waveform shows discontinuities around 0.002-0.003 causing audible clicks
-            if (jump > 0.001f)
+            // Log within-buffer clicks separately
+            if (jump > 0.001f && i > 0)  // Skip i=0 since we already logged it above
             {
                 clickDetections++;
                 
-                // Log first 50 clicks in detail to understand the pattern
                 if (clickDetections <= 50)
                 {
-                    LOG_WARNING("CLICK DETECTED: jump=" + juce::String(jump, 6) + 
+                    LOG_WARNING("WITHIN-BUFFER CLICK: jump=" + juce::String(jump, 6) + 
                                " from " + juce::String(lastSample, 6) + " to " + 
                                juce::String(currentSample, 6) + 
                                " at buffer #" + juce::String(bufferCount) + 
@@ -1033,6 +1050,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             
             lastSample = currentSample;
         }
+        
+        // Remember last sample of this buffer for next buffer's boundary check
+        lastBufferEndSample = leftChannel[buffer.getNumSamples() - 1];
         
         // More frequent logging: every 200 buffers (was 1000)
         if (bufferCount % 200 == 0)
