@@ -655,6 +655,42 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (samplesToRender <= 0)
                 continue;
             
+            // DIAGNOSTIC: Log grain rendering start to detect boundary issues
+            static int grainRenderCount = 0;
+            grainRenderCount++;
+            
+            if (grainRenderCount % 50 == 0) // Every 50th grain render
+            {
+                float firstAmplitude = particle->getGrainAmplitude(grain);
+                LOG_INFO("GRAIN RENDER #" + juce::String(grainRenderCount) + 
+                        ": pos=" + juce::String(grainPosition) + "/" + juce::String(totalGrainSamples) +
+                        ", startSample=" + juce::String(grainStartSample) +
+                        ", samplesToRender=" + juce::String(samplesToRender) +
+                        ", firstAmp=" + juce::String(firstAmplitude, 6));
+            }
+            
+            // DIAGNOSTIC: Track grain amplitude changes that might cause clicks
+            static int grainAmpCheckCount = 0;
+            static float lastADSRAmplitude = 1.0f;
+            float currentADSRAmplitude = particle->getADSRAmplitude();
+            
+            grainAmpCheckCount++;
+            if (grainAmpCheckCount % 200 == 0) // Check periodically
+            {
+                float adsrChange = std::abs(currentADSRAmplitude - lastADSRAmplitude);
+                
+                // Log sudden ADSR changes affecting all grains at once
+                if (adsrChange > 0.15f) // >15% sudden change
+                {
+                    LOG_WARNING("ADSR AMPLITUDE JUMP: " + juce::String(lastADSRAmplitude, 3) + 
+                               " -> " + juce::String(currentADSRAmplitude, 3) + 
+                               " (affects all " + juce::String(grains.size()) + 
+                               " grains, may click)");
+                }
+                
+                lastADSRAmplitude = currentADSRAmplitude;
+            }
+            
             // Get edge fade info (simple amplitude fade at boundaries)
             auto edgeFade = particle->getEdgeFade();
             
@@ -708,6 +744,25 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
+                // DIAGNOSTIC: Log first and last sample of each grain to catch boundary issues
+                static int sampleLogCount = 0;
+                bool isFirstSample = (grainPosition + i == 0);
+                bool isLastSample = (grainPosition + i == totalGrainSamples - 1);
+                
+                // DIAGNOSTIC: Track grain starts to detect DC offset jumps
+                static int lastGrainStart = -999999;
+                bool isNewGrainStart = (grainPosition + i == 0 && grain.startSample != lastGrainStart);
+                if (isNewGrainStart)
+                {
+                    lastGrainStart = grain.startSample;
+                }
+                
+                if ((isFirstSample || isLastSample) && sampleLogCount < 30)
+                {
+                    sampleLogCount++;
+                    // We'll log the actual output value after it's calculated below
+                }
+                
                 // Calculate source position with pitch shift (float for interpolation)
                 float sourcePosition = grainStartSample + ((grainPosition + i) * pitchShift);
                 
@@ -815,6 +870,59 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 float leftSample = audioSample * leftGain;
                 float rightSample = audioSample * rightGain;
                 
+                // DIAGNOSTIC: Log grain boundary sample values WITH EXACT PRECISION
+                if ((isFirstSample || isLastSample) && sampleLogCount <= 30)
+                {
+                    const char* boundary = isFirstSample ? "START" : "END";
+                    float bufferBefore = leftChannel ? leftChannel[i] : 0.0f;
+                    float bufferAfter = bufferBefore + leftSample;
+                    
+                    // Check if leftSample is actually non-zero despite grain being at boundary
+                    bool isActuallyNonZero = (std::abs(leftSample) > 1e-10f);
+                    
+                    LOG_INFO("GRAIN BOUNDARY " + juce::String(boundary) + 
+                            ": grainPos=" + juce::String(grainPosition + i) +
+                            ", grainAmp=" + juce::String(grainAmplitude, 10) +
+                            ", leftGain=" + juce::String(leftGain, 10) +
+                            ", leftSample=" + juce::String(leftSample, 10) +
+                            ", NON-ZERO=" + juce::String(isActuallyNonZero ? "YES!" : "no") +
+                            ", bufferBefore=" + juce::String(bufferBefore, 10) +
+                            ", bufferAfter=" + juce::String(bufferAfter, 10));
+                }
+                
+                // DIAGNOSTIC: Log source audio value and DC offset when new grain starts
+                if (isNewGrainStart && sampleLogCount <= 30)
+                {
+                    LOG_INFO("NEW GRAIN SOURCE: startSample=" + juce::String(grain.startSample) +
+                            ", sourcePos=" + juce::String(sourcePosition, 2) +
+                            ", rawAudio y1=" + juce::String(y1, 6) +
+                            ", audioSample=" + juce::String(audioSample, 6) +
+                            ", grainAmp=" + juce::String(grainAmplitude, 6) +
+                            ", bufferValue=" + juce::String(leftChannel ? leftChannel[i] : 0.0f, 6));
+                }
+                
+                // DIAGNOSTIC: Check for potential clipping from grain summing
+                static int clipCheckCount = 0;
+                clipCheckCount++;
+                
+                if (clipCheckCount % 10000 == 0) // Check periodically
+                {
+                    // Check if buffer output is accumulating to dangerous levels
+                    float currentLeft = leftChannel ? leftChannel[i] : 0.0f;
+                    float currentRight = rightChannel ? rightChannel[i] : 0.0f;
+                    float newLeft = currentLeft + leftSample;
+                    float newRight = currentRight + rightSample;
+                    
+                    // Warn if summing multiple grains creates clipping risk
+                    if (std::abs(newLeft) > 0.95f || std::abs(newRight) > 0.95f)
+                    {
+                        LOG_WARNING("GRAIN SUM NEAR CLIPPING: L=" + juce::String(newLeft, 3) + 
+                                   " R=" + juce::String(newRight, 3) + 
+                                   " (active grains in particle: " + juce::String(grains.size()) + 
+                                   ", total active: " + juce::String(totalActiveGrains) + ")");
+                    }
+                }
+                
                 // Soft clip to prevent harsh digital clipping (tanh provides smooth saturation)
                 // Only apply if signal is hot (> 0.9) to avoid unnecessary processing
                 if (std::abs(leftSample) > 0.9f)
@@ -836,6 +944,44 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             delete[] sourceChannelPointers;
         }
         
+        // DIAGNOSTIC: Check for overlapping grains causing summing issues
+        int activeGrainsForParticle = grains.size();
+        if (activeGrainsForParticle > 1)
+        {
+            static int overlapCheckCount = 0;
+            overlapCheckCount++;
+            
+            // Log every 100th overlap (more frequent than 500)
+            if (overlapCheckCount % 100 == 0)
+            {
+                // Check if any grains are in their fade regions simultaneously
+                int grainsInFade = 0;
+                int grainsInMiddle = 0;
+                for (const auto& grain : grains)
+                {
+                    int totalGrainSamples = grain.totalSamples;
+                    int fadeSamples = static_cast<int>(0.030f * getSampleRate()); // 30ms
+                    int actualFadeInSamples = juce::jmin(fadeSamples, totalGrainSamples / 2);
+                    int actualFadeOutSamples = juce::jmin(fadeSamples, totalGrainSamples / 2);
+                    
+                    if (grain.playbackPosition < actualFadeInSamples || 
+                        grain.playbackPosition >= totalGrainSamples - actualFadeOutSamples)
+                    {
+                        grainsInFade++;
+                    }
+                    else
+                    {
+                        grainsInMiddle++;
+                    }
+                }
+                
+                LOG_INFO("GRAIN OVERLAP: " + juce::String(activeGrainsForParticle) + 
+                        " grains (" + juce::String(grainsInFade) + " fading, " +
+                        juce::String(grainsInMiddle) + " at full volume, check #" + 
+                        juce::String(overlapCheckCount) + ")");
+            }
+        }
+        
         // FIX: Update grains AFTER rendering them, not before!
         // This ensures new grains start at position 0 and get their full fade-in
         // Old behavior: triggerGrain(pos=0) -> updateGrains(pos=512) -> render(pos=512) = CLICK!
@@ -843,51 +989,64 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         particle->updateGrains (buffer.getNumSamples());
     }
     
-    // DIAGNOSTIC: Detect buffer discontinuities (clicks)
+    // DIAGNOSTIC: Detect buffer discontinuities (clicks) - AGGRESSIVE MODE
     if (totalNumOutputChannels >= 1)
     {
         float* leftChannel = buffer.getWritePointer(0);
         static float lastSample = 0.0f;
-        static int clickCount = 0;
-        static int lastClickSample = -1000;
-        static int totalBuffersChecked = 0;
+        static int bufferCount = 0;
         static float maxJumpSeen = 0.0f;
+        static int clickDetections = 0;
+        static int totalSamplesChecked = 0;
         
-        totalBuffersChecked++;
+        bufferCount++;
         
+        // Check for sample-to-sample discontinuities in the buffer
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             float currentSample = leftChannel[i];
-            float sampleDiff = std::abs(currentSample - lastSample);
+            float jump = std::abs(currentSample - lastSample);
             
-            // Track maximum jump seen
-            if (sampleDiff > maxJumpSeen)
-                maxJumpSeen = sampleDiff;
+            totalSamplesChecked++;
             
-            // Lowered threshold from 0.1 to 0.01 to catch smaller clicks
-            if (sampleDiff > 0.01f && clickCount < 50 && (i - lastClickSample) > 100)
+            // Track maximum jump for periodic reporting
+            if (jump > maxJumpSeen)
+                maxJumpSeen = jump;
+            
+            // ULTRA-SENSITIVE THRESHOLD: Detect clicks at >0.001 (much lower!)
+            // The waveform shows discontinuities around 0.002-0.003 causing audible clicks
+            if (jump > 0.001f)
             {
-                LOG_WARNING("DISCONTINUITY DETECTED at sample " + juce::String(i) + 
-                           ": " + juce::String(lastSample, 6) + 
-                           " → " + juce::String(currentSample, 6) + 
-                           " (jump=" + juce::String(sampleDiff, 6) + ")");
-                clickCount++;
-                lastClickSample = i;
+                clickDetections++;
+                
+                // Log first 50 clicks in detail to understand the pattern
+                if (clickDetections <= 50)
+                {
+                    LOG_WARNING("CLICK DETECTED: jump=" + juce::String(jump, 6) + 
+                               " from " + juce::String(lastSample, 6) + " to " + 
+                               juce::String(currentSample, 6) + 
+                               " at buffer #" + juce::String(bufferCount) + 
+                               " sample #" + juce::String(i) + 
+                               " (active grains: " + juce::String(totalActiveGrains) + ")");
+                }
             }
             
             lastSample = currentSample;
         }
         
-        // Log max jump seen every 1000 buffers to verify detection is working
-        if (totalBuffersChecked % 1000 == 0)
+        // More frequent logging: every 200 buffers (was 1000)
+        if (bufferCount % 200 == 0)
         {
-            LOG_INFO("DISCONTINUITY CHECK: Checked " + juce::String(totalBuffersChecked) + 
-                    " buffers, max jump seen: " + juce::String(maxJumpSeen, 6) +
-                    ", clicks detected: " + juce::String(clickCount));
+            LOG_INFO("DISCONTINUITY CHECK: Buffers=" + juce::String(bufferCount) + 
+                    ", Samples=" + juce::String(totalSamplesChecked) +
+                    ", MaxJump=" + juce::String(maxJumpSeen, 6) + 
+                    ", Clicks=" + juce::String(clickDetections) +
+                    ", ActiveGrains=" + juce::String(totalActiveGrains));
+            
+            // Reset max jump tracker to see per-period changes
+            maxJumpSeen = 0.0f;
         }
     }
-    
-    // Buffer logging disabled for performance
 }
 
 void PluginProcessor::injectMidiMessage (const juce::MidiMessage& message)

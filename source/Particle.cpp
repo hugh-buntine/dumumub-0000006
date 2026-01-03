@@ -104,6 +104,38 @@ void Particle::triggerNewGrain (int bufferLength)
         }
     }
     
+    // DIAGNOSTIC: Check for grain size mismatches in overlapping grains
+    if (!activeGrains.empty())
+    {
+        static int sizeMismatchCheckCount = 0;
+        sizeMismatchCheckCount++;
+        
+        if (sizeMismatchCheckCount % 100 == 0)
+        {
+            // Check if new grain size differs from existing grains
+            bool sizeMismatch = false;
+            int minSize = cachedTotalGrainSamples;
+            int maxSize = cachedTotalGrainSamples;
+            
+            for (const auto& grain : activeGrains)
+            {
+                if (grain.totalSamples != cachedTotalGrainSamples)
+                {
+                    sizeMismatch = true;
+                    minSize = juce::jmin(minSize, grain.totalSamples);
+                    maxSize = juce::jmax(maxSize, grain.totalSamples);
+                }
+            }
+            
+            if (sizeMismatch)
+            {
+                LOG_WARNING("GRAIN SIZE MISMATCH: Overlapping grains have different sizes: " +
+                           juce::String(minSize) + " to " + juce::String(maxSize) + 
+                           " samples (fade regions may not align, causing clicks)");
+            }
+        }
+    }
+    
     int startSample = calculateGrainStartPosition (bufferLength);
     
     // Log sudden jumps in grain start position (can cause phase discontinuities/clicks)
@@ -546,6 +578,36 @@ bool Particle::shouldTriggerNewGrain (double sampleRate, float grainFrequencyHz)
     // Check if enough time has passed
     if (samplesSinceLastGrainTrigger >= samplesPerPeriod)
     {
+        // DIAGNOSTIC: Check if triggering new grain while others are in their fade regions
+        static int triggerCheckCount = 0;
+        triggerCheckCount++;
+        
+        if (triggerCheckCount % 200 == 0 && !activeGrains.empty())
+        {
+            int fadeSamples = static_cast<int>(0.030f * sampleRate); // 30ms
+            int grainsInFadeIn = 0;
+            int grainsInFadeOut = 0;
+            
+            for (const auto& grain : activeGrains)
+            {
+                int actualFadeIn = juce::jmin(fadeSamples, grain.totalSamples / 2);
+                int actualFadeOut = juce::jmin(fadeSamples, grain.totalSamples / 2);
+                
+                if (grain.playbackPosition < actualFadeIn)
+                    grainsInFadeIn++;
+                else if (grain.playbackPosition >= grain.totalSamples - actualFadeOut)
+                    grainsInFadeOut++;
+            }
+            
+            if (grainsInFadeIn > 0 || grainsInFadeOut > 0)
+            {
+                LOG_INFO("NEW GRAIN TRIGGER: " + juce::String(activeGrains.size()) + 
+                        " existing grains (" + juce::String(grainsInFadeIn) + " fading in, " +
+                        juce::String(grainsInFadeOut) + " fading out), period=" + 
+                        juce::String(samplesPerPeriod) + " samples");
+            }
+        }
+        
         samplesSinceLastGrainTrigger = 0;
         return true;
     }
@@ -691,10 +753,13 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     {
         // FADE IN: Use FIRST HALF of Hann curve (rising: 0.0 → 1.0)
         // Map grain position 0→actualFadeInSamples to Hann input 0.0→0.5
-        float fadeProgress = static_cast<float>(grainPos) / static_cast<float>(actualFadeInSamples);
+        // CRITICAL FIX: Use (actualFadeInSamples - 1) as denominator to reach exactly 1.0
+        // When grainPos = 0 → fadeProgress = 0.0 (Hann = 0.0, silent start)
+        // When grainPos = actualFadeInSamples - 1 → fadeProgress = 1.0 (Hann = 1.0, full volume)
+        float fadeProgress = static_cast<float>(grainPos) / static_cast<float>(actualFadeInSamples - 1);
         fadeProgress = juce::jlimit (0.0f, 1.0f, fadeProgress);
         
-        // Scale to first half of Hann curve: input 0.0 gives Hann(0.0)=0.0, input 0.5 gives Hann(0.5)=1.0
+        // Scale to first half of Hann curve: input 0.0 gives Hann(0.0)=0.0, input 1.0 gives Hann(0.5)=1.0
         float hannPos = fadeProgress * 0.5f; // Maps 0.0→1.0 to 0.0→0.5
         grainEnvelope = getHannWindowValue(hannPos);
         
@@ -714,8 +779,11 @@ float Particle::getGrainAmplitude (const Grain& grain) const
         // Map grain position to Hann input 0.5→1.0
         int samplesToEnd = grainTotalSamples - grainPos;
         
-        // Map samplesToEnd (counting down) to fade progress (0.0 → 1.0)
-        float fadeProgress = 1.0f - (static_cast<float>(samplesToEnd) / static_cast<float>(actualFadeOutSamples));
+        // CRITICAL FIX: Map samplesToEnd correctly to reach exactly 1.0 at final sample
+        // When samplesToEnd = actualFadeOutSamples → fadeProgress = 0.0 (fade just starting)
+        // When samplesToEnd = 1 → fadeProgress = 1.0 (fade complete, must be zero!)
+        // Need to use (actualFadeOutSamples - 1) as denominator for correct mapping
+        float fadeProgress = 1.0f - (static_cast<float>(samplesToEnd - 1) / static_cast<float>(actualFadeOutSamples - 1));
         fadeProgress = juce::jlimit (0.0f, 1.0f, fadeProgress);
         
         // Scale to second half of Hann curve: 0.0 gives Hann(0.5)=1.0, 1.0 gives Hann(1.0)=0.0
