@@ -11,7 +11,7 @@ from scipy import signal
 import sys
 import os
 
-def analyze_clicks(wav_path, threshold=0.001, context_samples=50):
+def analyze_clicks(wav_path, threshold=0.0005, context_samples=50):
     """
     Analyze a WAV file for click artifacts.
     

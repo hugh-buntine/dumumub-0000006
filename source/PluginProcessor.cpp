@@ -989,42 +989,35 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         particle->updateGrains (buffer.getNumSamples());
     }
     
-    // ========================================================================
-    // BUFFER CONTINUITY FIX - Apply DC offset correction at buffer start
-    // ========================================================================
-    // The clicks happen because grains don't render identically at buffer boundaries
-    // This adds a DC offset to the entire buffer to ensure smooth continuation
-    const int crossfadeSamples = 256; // Longer crossfade (5.8ms at 44.1kHz)
+    // DIAGNOSTIC: Log grain states at buffer end to understand discontinuities
+    static int bufferEndLogCount = 0;
+    bufferEndLogCount++;
     
-    for (int channel = 0; channel < totalNumOutputChannels && channel < 2; ++channel)
+    if (bufferEndLogCount % 10 == 0 && totalNumOutputChannels >= 1 && !particles.isEmpty())
     {
-        float* channelData = buffer.getWritePointer(channel);
-        const int numSamples = buffer.getNumSamples();
+        float* leftChannel = buffer.getWritePointer(0);
+        float lastSampleValue = leftChannel[buffer.getNumSamples() - 1];
         
-        if (numSamples > 0)
+        juce::String grainStates;
+        int totalGrainsActive = 0;
+        
+        for (auto* particle : particles)
         {
-            // Calculate the discontinuity jump
-            float discontinuity = channelData[0] - lastBufferSample[channel];
+            auto& grains = particle->getActiveGrains();
+            totalGrainsActive += grains.size();
             
-            // Apply smooth correction over crossfade length using cubic curve
-            int fadeSamples = juce::jmin(crossfadeSamples, numSamples);
-            
-            for (int i = 0; i < fadeSamples; ++i)
+            for (const auto& grain : grains)
             {
-                // Cubic fade: very smooth S-curve (ease-in-out)
-                float fadeRatio = static_cast<float>(i) / static_cast<float>(fadeSamples);
-                
-                // Smoothstep interpolation: 3t² - 2t³ (very smooth)
-                fadeRatio = fadeRatio * fadeRatio * (3.0f - 2.0f * fadeRatio);
-                
-                // Subtract diminishing discontinuity offset
-                float correction = discontinuity * (1.0f - fadeRatio);
-                channelData[i] -= correction;
+                float grainAmp = particle->getGrainAmplitude(grain);
+                grainStates += juce::String::formatted(" [pos=%d amp=%.4f]", 
+                    grain.playbackPosition, grainAmp);
             }
-            
-            // Store the last sample of this buffer for next time
-            lastBufferSample[channel] = channelData[numSamples - 1];
         }
+        
+        LOG_INFO("BUFFER END #" + juce::String(bufferEndLogCount) + 
+                ": lastSample=" + juce::String(lastSampleValue, 6) +
+                ", activeGrains=" + juce::String(totalGrainsActive) +
+                ", states:" + grainStates);
     }
     
     // DIAGNOSTIC: Detect buffer discontinuities (clicks) - AGGRESSIVE MODE
@@ -1047,13 +1040,51 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         if (bufferBoundaryJump > 0.001f && bufferCount > 1)
         {
             clickDetections++;
-            if (clickDetections <= 50)
+            if (clickDetections <= 15)  // Reduce to 15 for more detailed logging
             {
+                // Log detailed grain states at the moment of click
+                juce::String prevGrainStates, currGrainStates;
+                juce::String sourceAudioInfo;
+                
+                for (auto* particle : particles)
+                {
+                    auto& grains = particle->getActiveGrains();
+                    float pitchShift = particle->getPitchShift();
+                    
+                    for (const auto& grain : grains)
+                    {
+                        // Current grain state (what will render first sample of this buffer)
+                        float currAmp = particle->getGrainAmplitude(grain);
+                        currGrainStates += juce::String::formatted(" [pos=%d amp=%.4f]", 
+                            grain.playbackPosition, currAmp);
+                        
+                        // Previous buffer's last sample: grain was 1 sample behind current position
+                        Grain prevGrain = grain;
+                        prevGrain.playbackPosition = grain.playbackPosition - 1;
+                        if (prevGrain.playbackPosition >= 0)
+                        {
+                            float prevAmp = particle->getGrainAmplitude(prevGrain);
+                            prevGrainStates += juce::String::formatted(" [pos=%d amp=%.4f]", 
+                                prevGrain.playbackPosition, prevAmp);
+                            
+                            // Calculate source positions for both samples
+                            float prevSourcePos = grain.startSample + (prevGrain.playbackPosition * pitchShift);
+                            float currSourcePos = grain.startSample + (grain.playbackPosition * pitchShift);
+                            
+                            sourceAudioInfo += juce::String::formatted("\n    Grain@%d: prevSrc=%.2f currSrc=%.2f (diff=%.2f)", 
+                                grain.startSample, prevSourcePos, currSourcePos, currSourcePos - prevSourcePos);
+                        }
+                    }
+                }
+                
                 LOG_WARNING("BUFFER BOUNDARY CLICK: jump=" + juce::String(bufferBoundaryJump, 6) + 
                            " from buffer end " + juce::String(lastBufferEndSample, 6) + 
                            " to buffer start " + juce::String(firstSampleThisBuffer, 6) + 
                            " at buffer #" + juce::String(bufferCount) + 
-                           " (active grains: " + juce::String(totalActiveGrains) + ")");
+                           " (active grains: " + juce::String(totalActiveGrains) + ")" +
+                           "\n  PREV buffer grains:" + prevGrainStates +
+                           "\n  CURR buffer grains:" + currGrainStates +
+                           "\n  Source audio positions:" + sourceAudioInfo);
             }
         }
         
