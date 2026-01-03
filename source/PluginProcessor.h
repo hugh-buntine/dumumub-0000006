@@ -144,6 +144,9 @@ private:
     // Timing for particle updates
     double lastUpdateTime = 0.0;
     
+    // Buffer continuity - store last sample of each channel to smooth buffer transitions
+    float lastBufferSample[2] = {0.0f, 0.0f};
+    
     // MIDI note handling helpers
     void handleNoteOn (int noteNumber, float velocity, float pitchShift);
     void handleNoteOff (int noteNumber);

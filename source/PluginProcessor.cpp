@@ -989,6 +989,44 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         particle->updateGrains (buffer.getNumSamples());
     }
     
+    // ========================================================================
+    // BUFFER CONTINUITY FIX - Apply DC offset correction at buffer start
+    // ========================================================================
+    // The clicks happen because grains don't render identically at buffer boundaries
+    // This adds a DC offset to the entire buffer to ensure smooth continuation
+    const int crossfadeSamples = 256; // Longer crossfade (5.8ms at 44.1kHz)
+    
+    for (int channel = 0; channel < totalNumOutputChannels && channel < 2; ++channel)
+    {
+        float* channelData = buffer.getWritePointer(channel);
+        const int numSamples = buffer.getNumSamples();
+        
+        if (numSamples > 0)
+        {
+            // Calculate the discontinuity jump
+            float discontinuity = channelData[0] - lastBufferSample[channel];
+            
+            // Apply smooth correction over crossfade length using cubic curve
+            int fadeSamples = juce::jmin(crossfadeSamples, numSamples);
+            
+            for (int i = 0; i < fadeSamples; ++i)
+            {
+                // Cubic fade: very smooth S-curve (ease-in-out)
+                float fadeRatio = static_cast<float>(i) / static_cast<float>(fadeSamples);
+                
+                // Smoothstep interpolation: 3t² - 2t³ (very smooth)
+                fadeRatio = fadeRatio * fadeRatio * (3.0f - 2.0f * fadeRatio);
+                
+                // Subtract diminishing discontinuity offset
+                float correction = discontinuity * (1.0f - fadeRatio);
+                channelData[i] -= correction;
+            }
+            
+            // Store the last sample of this buffer for next time
+            lastBufferSample[channel] = channelData[numSamples - 1];
+        }
+    }
+    
     // DIAGNOSTIC: Detect buffer discontinuities (clicks) - AGGRESSIVE MODE
     if (totalNumOutputChannels >= 1)
     {
