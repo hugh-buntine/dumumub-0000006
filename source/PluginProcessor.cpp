@@ -684,6 +684,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             constantAmplitude *= edgeFade.amplitude;  // Canvas edge fading
             constantAmplitude *= particle->getInitialVelocityMultiplier();  // MIDI velocity
             constantAmplitude *= gainCompensation;  // Automatic gain reduction to prevent clipping when many grains overlap
+            constantAmplitude *= particle->getADSRAmplitude();  // CRITICAL: Apply ADSR at particle level, not per-grain (prevents amplitude modulation artifacts)
             
             // NOTE: Can't skip grains based on amplitude here since it changes per-sample
             // Grain amplitude will be calculated in the sample loop below

@@ -844,8 +844,10 @@ float Particle::getGrainAmplitude (const Grain& grain) const
         grainEnvelope = 0.0f;
     }
     
-    // Combine Hann window with particle ADSR envelope
-    return grainEnvelope * adsrAmplitude;
+    // CRITICAL FIX: Return ONLY the grain envelope (Hann window)
+    // DO NOT apply ADSR here - it causes amplitude modulation artifacts during Attack/Release
+    // The ADSR envelope is applied at the particle level (to all grains combined) in PluginProcessor
+    return grainEnvelope;
 }
 
 int Particle::calculateGrainStartPosition (int bufferLength)
