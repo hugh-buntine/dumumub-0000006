@@ -676,15 +676,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Get edge fade info (simple amplitude fade at boundaries)
             auto edgeFade = particle->getEdgeFade();
             
-            // NOTE: Grain amplitude (Hann window + ADSR) changes per-sample as grain plays
-            // Don't calculate it once here - calculate inside the sample loop!
+            // NOTE: Grain amplitude (Hann window) changes per-sample as grain plays
+            // ADSR also changes per-sample for smooth transitions during short attack/release
+            // Don't calculate either here - calculate inside the sample loop!
             
-            // Pre-calculate constant amplitude factors (NOT grain envelope - that's per-sample)
+            // Pre-calculate constant amplitude factors (NOT grain envelope or ADSR - those are per-sample)
             float constantAmplitude = masterGainLinear;
             constantAmplitude *= edgeFade.amplitude;  // Canvas edge fading
             constantAmplitude *= particle->getInitialVelocityMultiplier();  // MIDI velocity
             constantAmplitude *= gainCompensation;  // Automatic gain reduction to prevent clipping when many grains overlap
-            constantAmplitude *= particle->getADSRAmplitude();  // CRITICAL: Apply ADSR at particle level, not per-grain (prevents amplitude modulation artifacts)
+            // NOTE: ADSR is now applied per-sample for smooth short attack/release
             
             // NOTE: Can't skip grains based on amplitude here since it changes per-sample
             // Grain amplitude will be calculated in the sample loop below
@@ -790,8 +791,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // The Hann window naturally produces very small values at the start (< 1e-6)
                 // Forcing these to zero defeats the purpose of the fade-in and causes clicks
                 
-                // Combine grain envelope with constant amplitude factors
-                float totalAmplitude = grainAmplitude * constantAmplitude;
+                // CRITICAL: Update ADSR per-sample for smooth short attack/release
+                // This prevents amplitude modulation artifacts during fast ADSR transitions
+                particle->updateADSRSample (getSampleRate());
+                float adsrAmplitude = particle->getADSRAmplitude();
+                
+                // Combine grain envelope with constant amplitude factors and per-sample ADSR
+                float totalAmplitude = grainAmplitude * constantAmplitude * adsrAmplitude;
                 
                 // CRITICAL: Don't skip samples even if amplitude is zero!
                 // The first sample of a grain has Hann=0.0 by design (fade-in starts at zero)

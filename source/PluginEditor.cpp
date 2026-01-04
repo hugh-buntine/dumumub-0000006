@@ -482,17 +482,9 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     auto release = releaseSlider.getValue();
     constexpr float decay = 0.2f; // Fixed decay time
     
-    // Convert sustain to logarithmic for display (match audio processing)
-    float sustain;
-    if (sustainLinear < 0.001f)
-    {
-        sustain = 0.0f;
-    }
-    else
-    {
-        float sustainDb = (sustainLinear - 1.0f) * 60.0f; // -60dB to 0dB
-        sustain = juce::Decibels::decibelsToGain(sustainDb);
-    }
+    // Use LINEAR sustain value for visual display (matches slider position intuitively)
+    // Audio uses logarithmic conversion, but visual should show what the slider shows
+    float sustain = sustainLinear;
     
     // Use bottom two-thirds of canvas for drawing area
     auto canvasBounds = canvas.getBounds();

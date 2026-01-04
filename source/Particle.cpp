@@ -315,8 +315,20 @@ void Particle::updateADSR (float deltaTime)
             
         case ADSRPhase::Finished:
             adsrAmplitude = 0.0f;
+            adsrAmplitudeLinear = 0.0f;
             break;
     }
+}
+
+void Particle::updateADSRSample (double sampleRate)
+{
+    // Update ADSR for a single sample (1/sampleRate seconds)
+    // This provides smooth ADSR transitions even during short attack/release times
+    if (sampleRate <= 0.0)
+        return;
+    
+    float deltaTime = static_cast<float>(1.0 / sampleRate);
+    updateADSR (deltaTime);
 }
 
 void Particle::triggerRelease()

@@ -53,6 +53,7 @@ public:
     
     // ADSR control
     void updateADSR (float deltaTime);
+    void updateADSRSample (double sampleRate);  // Update ADSR for single sample (for smooth short attack/release)
     void triggerRelease();
     float getADSRAmplitude() const { return adsrAmplitude; }
     
