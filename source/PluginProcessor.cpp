@@ -39,9 +39,16 @@ PluginProcessor::PluginProcessor()
     // Load mass points and spawn points from the tree
     loadPointsFromTree();
     
-    // NOTE: Don't create default mass point and spawn point here!
-    // They will be created automatically if needed when processing starts,
-    // or restored from saved state in setStateInformation()
+    // If this is a brand new plugin (no points in tree), create defaults
+    // Otherwise, use whatever was saved (even if 0 points)
+    if (massPoints.empty() && spawnPoints.empty())
+    {
+        // Create default configuration for fresh plugin
+        massPoints.push_back({ juce::Point<float>(200.0f, 200.0f), 4.0f });
+        spawnPoints.push_back({ juce::Point<float>(100.0f, 300.0f), 0.0f });
+        savePointsToTree(); // Save defaults to tree
+        LOG_INFO("Brand new plugin - created defaults: 1 mass at (200,200), 1 spawn at (100,300)");
+    }
 }
 
 PluginProcessor::~PluginProcessor()
@@ -1043,19 +1050,8 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
         // Mark that we've been through setStateInformation
         stateHasBeenRestored = true;
         
-        // If no points were loaded, create defaults
-        if (massPoints.empty())
-        {
-            massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });
-            LOG_INFO("No saved mass points - created default mass point");
-            savePointsToTree(); // Save the default to the tree
-        }
-        if (spawnPoints.empty())
-        {
-            spawnPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 0.0f });
-            LOG_INFO("No saved spawn points - created default spawn point");
-            savePointsToTree(); // Save the default to the tree
-        }
+        // Don't create defaults here - use whatever was saved (even if 0 points)
+        // Defaults are only created in constructor for brand new plugins
     }
 }
 
