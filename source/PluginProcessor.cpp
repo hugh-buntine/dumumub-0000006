@@ -28,13 +28,9 @@ PluginProcessor::PluginProcessor()
     Particle::initializeHannTable();
     LOG_INFO("Initialized Hann window lookup table");
     
-    // Create default mass point at center (will be positioned correctly when canvas size is known)
-    massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });
-    
-    // Create default spawn point at center with angle pointing right
-    spawnPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 0.0f });
-    
-    LOG_INFO("Created default mass point and spawn point");
+    // NOTE: Don't create default mass point and spawn point here!
+    // They will be created automatically if needed when processing starts,
+    // or restored from saved state in setStateInformation()
 }
 
 PluginProcessor::~PluginProcessor()
@@ -321,10 +317,18 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
 {
     LOG_INFO("handleNoteOn: note=" + juce::String(noteNumber) + " velocity=" + juce::String(velocity));
     
+    // Ensure we have at least one spawn point and one mass point
+    // (Create defaults on first use if not loaded from saved state)
     if (spawnPoints.size() == 0)
     {
-        LOG_WARNING("No spawn points available for note-on");
-        return;
+        LOG_INFO("No spawn points found - creating default spawn point at center");
+        spawnPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 0.0f });
+    }
+    
+    if (massPoints.size() == 0)
+    {
+        LOG_INFO("No mass points found - creating default mass point at center");
+        massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });
     }
     
     // Get ADSR parameters

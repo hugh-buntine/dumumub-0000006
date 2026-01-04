@@ -135,8 +135,8 @@ private:
     std::vector<SpawnPointData> spawnPoints;
     
     // Simulation parameters
-    float gravityStrength = 100.0f;
-    juce::Rectangle<float> canvasBounds {0, 0, 800, 600};
+    float gravityStrength = 50000.0f; // Match Canvas default (50000.0f)
+    juce::Rectangle<float> canvasBounds {0, 0, 400, 400}; // Match actual canvas size (400x400)
     float particleLifespan = 30.0f; // Legacy parameter - no longer used with ADSR
     int maxParticles = 8; // Default limit (can be changed via setMaxParticles)
     bool bounceMode = false; // When true, particles bounce off walls instead of wrapping
