@@ -28,6 +28,17 @@ PluginProcessor::PluginProcessor()
     Particle::initializeHannTable();
     LOG_INFO("Initialized Hann window lookup table");
     
+    // Add child ValueTrees for mass points and spawn points if they don't exist
+    // These will be automatically saved/restored with the APVTS state
+    auto& state = apvts.state;
+    if (!state.getChildWithName("MassPoints").isValid())
+        state.appendChild(juce::ValueTree("MassPoints"), nullptr);
+    if (!state.getChildWithName("SpawnPoints").isValid())
+        state.appendChild(juce::ValueTree("SpawnPoints"), nullptr);
+    
+    // Load mass points and spawn points from the tree
+    loadPointsFromTree();
+    
     // NOTE: Don't create default mass point and spawn point here!
     // They will be created automatically if needed when processing starts,
     // or restored from saved state in setStateInformation()
@@ -214,6 +225,80 @@ void PluginProcessor::releaseResources()
 }
 
 //==============================================================================
+// Helper functions to sync mass/spawn points between arrays and ValueTree
+
+void PluginProcessor::loadPointsFromTree()
+{
+    auto& state = apvts.state;
+    
+    // Load mass points
+    auto massPointsTree = state.getChildWithName("MassPoints");
+    if (massPointsTree.isValid())
+    {
+        massPoints.clear();
+        for (int i = 0; i < massPointsTree.getNumChildren(); ++i)
+        {
+            auto child = massPointsTree.getChild(i);
+            MassPointData mp;
+            mp.position.x = child.getProperty("x", 200.0f);
+            mp.position.y = child.getProperty("y", 200.0f);
+            mp.massMultiplier = child.getProperty("mass", 4.0f);
+            massPoints.push_back(mp);
+        }
+        LOG_INFO("Loaded " + juce::String(massPoints.size()) + " mass points from tree");
+    }
+    
+    // Load spawn points
+    auto spawnPointsTree = state.getChildWithName("SpawnPoints");
+    if (spawnPointsTree.isValid())
+    {
+        spawnPoints.clear();
+        for (int i = 0; i < spawnPointsTree.getNumChildren(); ++i)
+        {
+            auto child = spawnPointsTree.getChild(i);
+            SpawnPointData sp;
+            sp.position.x = child.getProperty("x", 200.0f);
+            sp.position.y = child.getProperty("y", 200.0f);
+            sp.momentumAngle = child.getProperty("angle", 0.0f);
+            spawnPoints.push_back(sp);
+        }
+        LOG_INFO("Loaded " + juce::String(spawnPoints.size()) + " spawn points from tree");
+    }
+}
+
+void PluginProcessor::savePointsToTree()
+{
+    auto& state = apvts.state;
+    
+    // Save mass points
+    auto massPointsTree = state.getOrCreateChildWithName("MassPoints", nullptr);
+    massPointsTree.removeAllChildren(nullptr);
+    for (const auto& mp : massPoints)
+    {
+        juce::ValueTree child("MassPoint");
+        child.setProperty("x", mp.position.x, nullptr);
+        child.setProperty("y", mp.position.y, nullptr);
+        child.setProperty("mass", mp.massMultiplier, nullptr);
+        massPointsTree.appendChild(child, nullptr);
+    }
+    
+    // Save spawn points
+    auto spawnPointsTree = state.getOrCreateChildWithName("SpawnPoints", nullptr);
+    spawnPointsTree.removeAllChildren(nullptr);
+    for (const auto& sp : spawnPoints)
+    {
+        juce::ValueTree child("SpawnPoint");
+        child.setProperty("x", sp.position.x, nullptr);
+        child.setProperty("y", sp.position.y, nullptr);
+        child.setProperty("angle", sp.momentumAngle, nullptr);
+        spawnPointsTree.appendChild(child, nullptr);
+    }
+    
+    LOG_INFO("Saved " + juce::String(massPoints.size()) + " mass points, " + 
+             juce::String(spawnPoints.size()) + " spawn points to tree");
+}
+
+//==============================================================================
 // Mass and spawn point management
 
 void PluginProcessor::updateMassPoint (int index, juce::Point<float> position, float massMultiplier)
@@ -222,6 +307,9 @@ void PluginProcessor::updateMassPoint (int index, juce::Point<float> position, f
     {
         massPoints[index].position = position;
         massPoints[index].massMultiplier = massMultiplier;
+        LOG_INFO("Updated mass point " + juce::String(index) + " to (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ")");
+        savePointsToTree(); // Sync to ValueTree
+        updateHostDisplay(); // Notify DAW that state has changed
     }
 }
 
@@ -231,12 +319,19 @@ void PluginProcessor::addMassPoint (juce::Point<float> position, float massMulti
     data.position = position;
     data.massMultiplier = massMultiplier;
     massPoints.push_back (data);
+    LOG_INFO("Added mass point at (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ") - Total: " + juce::String(massPoints.size()));
+    savePointsToTree(); // Sync to ValueTree
+    updateHostDisplay(); // Notify DAW that state has changed
 }
 
 void PluginProcessor::removeMassPoint (int index)
 {
     if (index >= 0 && index < static_cast<int>(massPoints.size()))
+    {
         massPoints.erase (massPoints.begin() + index);
+        savePointsToTree(); // Sync to ValueTree
+        updateHostDisplay(); // Notify DAW that state has changed
+    }
 }
 
 void PluginProcessor::updateSpawnPoint (int index, juce::Point<float> position, float angle)
@@ -245,6 +340,9 @@ void PluginProcessor::updateSpawnPoint (int index, juce::Point<float> position, 
     {
         spawnPoints[index].position = position;
         spawnPoints[index].momentumAngle = angle;
+        LOG_INFO("Updated spawn point " + juce::String(index) + " to (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ") angle: " + juce::String(angle, 2));
+        savePointsToTree(); // Sync to ValueTree
+        updateHostDisplay(); // Notify DAW that state has changed
     }
 }
 
@@ -254,6 +352,8 @@ void PluginProcessor::addSpawnPoint (juce::Point<float> position, float angle)
     data.position = position;
     data.momentumAngle = angle;
     spawnPoints.push_back (data);
+    savePointsToTree(); // Sync to ValueTree
+    updateHostDisplay(); // Notify DAW that state has changed
     LOG_INFO("Processor: Added spawn point - Total: " + juce::String(spawnPoints.size()) + 
         " at (" + juce::String(position.x) + ", " + juce::String(position.y) + 
         ") angle: " + juce::String(angle));
@@ -262,7 +362,11 @@ void PluginProcessor::addSpawnPoint (juce::Point<float> position, float angle)
 void PluginProcessor::removeSpawnPoint (int index)
 {
     if (index >= 0 && index < static_cast<int>(spawnPoints.size()))
+    {
         spawnPoints.erase (spawnPoints.begin() + index);
+        savePointsToTree(); // Sync to ValueTree
+        updateHostDisplay(); // Notify DAW that state has changed
+    }
 }
 
 void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
@@ -889,7 +993,8 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 //==============================================================================
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // Save plugin state to XML
+    // The ValueTree already contains the mass/spawn points (synced via savePointsToTree())
+    // Just save the APVTS state which includes everything
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     
@@ -897,26 +1002,6 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     if (loadedAudioFile.existsAsFile())
     {
         xml->setAttribute ("audioFile", loadedAudioFile.getFullPathName());
-    }
-    
-    // Save mass points
-    auto* massPointsXml = xml->createNewChildElement ("MassPoints");
-    for (const auto& mp : massPoints)
-    {
-        auto* mpXml = massPointsXml->createNewChildElement ("MassPoint");
-        mpXml->setAttribute ("x", mp.position.x);
-        mpXml->setAttribute ("y", mp.position.y);
-        mpXml->setAttribute ("mass", mp.massMultiplier);
-    }
-    
-    // Save spawn points
-    auto* spawnPointsXml = xml->createNewChildElement ("SpawnPoints");
-    for (const auto& sp : spawnPoints)
-    {
-        auto* spXml = spawnPointsXml->createNewChildElement ("SpawnPoint");
-        spXml->setAttribute ("x", sp.position.x);
-        spXml->setAttribute ("y", sp.position.y);
-        spXml->setAttribute ("momentumAngle", sp.momentumAngle);  // Save user-set momentum direction (not visual rotation)
     }
     
     copyXmlToBinary (*xml, destData);
@@ -931,7 +1016,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     
     if (xmlState != nullptr)
     {
-        // Restore parameters
+        // Restore parameters (this automatically restores the ValueTree with mass/spawn points)
         if (xmlState->hasTagName (apvts.state.getType()))
         {
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
@@ -952,42 +1037,24 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
             }
         }
         
-        // Restore mass points
-        auto* massPointsXml = xmlState->getChildByName ("MassPoints");
-        if (massPointsXml != nullptr)
-        {
-            massPoints.clear();
-            for (auto* mpXml : massPointsXml->getChildIterator())
-            {
-                if (mpXml->hasTagName ("MassPoint"))
-                {
-                    MassPointData mp;
-                    mp.position.x = static_cast<float>(mpXml->getDoubleAttribute ("x"));
-                    mp.position.y = static_cast<float>(mpXml->getDoubleAttribute ("y"));
-                    mp.massMultiplier = static_cast<float>(mpXml->getDoubleAttribute ("mass"));
-                    massPoints.push_back (mp);
-                }
-            }
-            LOG_INFO("Restored " + juce::String(massPoints.size()) + " mass points");
-        }
+        // Load mass/spawn points from the restored ValueTree into the arrays
+        loadPointsFromTree();
         
-        // Restore spawn points
-        auto* spawnPointsXml = xmlState->getChildByName ("SpawnPoints");
-        if (spawnPointsXml != nullptr)
+        // Mark that we've been through setStateInformation
+        stateHasBeenRestored = true;
+        
+        // If no points were loaded, create defaults
+        if (massPoints.empty())
         {
-            spawnPoints.clear();
-            for (auto* spXml : spawnPointsXml->getChildIterator())
-            {
-                if (spXml->hasTagName ("SpawnPoint"))
-                {
-                    SpawnPointData sp;
-                    sp.position.x = static_cast<float>(spXml->getDoubleAttribute ("x"));
-                    sp.position.y = static_cast<float>(spXml->getDoubleAttribute ("y"));
-                    sp.momentumAngle = static_cast<float>(spXml->getDoubleAttribute ("momentumAngle"));  // Load user-set momentum direction
-                    spawnPoints.push_back (sp);
-                }
-            }
-            LOG_INFO("Restored " + juce::String(spawnPoints.size()) + " spawn points");
+            massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });
+            LOG_INFO("No saved mass points - created default mass point");
+            savePointsToTree(); // Save the default to the tree
+        }
+        if (spawnPoints.empty())
+        {
+            spawnPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 0.0f });
+            LOG_INFO("No saved spawn points - created default spawn point");
+            savePointsToTree(); // Save the default to the tree
         }
     }
 }

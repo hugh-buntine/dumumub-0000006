@@ -77,6 +77,10 @@ public:
     juce::OwnedArray<Particle>* getParticles() { return &particles; }
     juce::CriticalSection& getParticlesLock() { return particlesLock; }
     
+    // Helper functions to sync mass/spawn points between arrays and ValueTree
+    void loadPointsFromTree();
+    void savePointsToTree();
+    
     // Mass and spawn point management (called from GUI thread)
     void updateMassPoint (int index, juce::Point<float> position, float massMultiplier);
     void addMassPoint (juce::Point<float> position, float massMultiplier);
@@ -133,6 +137,7 @@ private:
     
     std::vector<MassPointData> massPoints;
     std::vector<SpawnPointData> spawnPoints;
+    bool stateHasBeenRestored = false; // Track if we've loaded saved state yet
     
     // Simulation parameters
     float gravityStrength = 50000.0f; // Match Canvas default (50000.0f)
