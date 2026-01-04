@@ -659,6 +659,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             continue;
         }
         
+        // CRITICAL: Pre-calculate ADSR amplitudes for entire buffer (once per sample)
+        // This prevents ADSR from advancing multiple times per sample (once per grain)
+        std::vector<float> adsrAmplitudes(buffer.getNumSamples());
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            particle->updateADSRSample (getSampleRate());
+            adsrAmplitudes[i] = particle->getADSRAmplitude();
+        }
+        
         // Process each active grain
         for (auto& grain : grains)
         {
@@ -791,10 +800,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // The Hann window naturally produces very small values at the start (< 1e-6)
                 // Forcing these to zero defeats the purpose of the fade-in and causes clicks
                 
-                // CRITICAL: Update ADSR per-sample for smooth short attack/release
-                // This prevents amplitude modulation artifacts during fast ADSR transitions
-                particle->updateADSRSample (getSampleRate());
-                float adsrAmplitude = particle->getADSRAmplitude();
+                // CRITICAL: Use pre-calculated ADSR amplitude for this buffer sample
+                // ADSR is calculated once per sample for entire particle (prevents multiple updates per sample)
+                float adsrAmplitude = adsrAmplitudes[i];
                 
                 // Combine grain envelope with constant amplitude factors and per-sample ADSR
                 float totalAmplitude = grainAmplitude * constantAmplitude * adsrAmplitude;
