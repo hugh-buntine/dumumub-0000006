@@ -285,36 +285,24 @@ void Particle::updateADSR (float deltaTime)
             break;
             
         case ADSRPhase::Release:
+        {
             // Exponential release from sustain level to 0.0 (smooth fade)
-            if (releaseTime > 0.0f)
-            {
-                float linearProgress = juce::jmin (1.0f, adsrTime / releaseTime);
-                // Apply exponential decay: y = (1-x)^4 (smooth, natural fade)
-                float curve = std::pow (1.0f - linearProgress, 4.0f);
-                
-                // Logarithmic for audio
-                adsrAmplitude = sustainLevel * curve;
-                adsrAmplitude = juce::jmax (0.0f, adsrAmplitude);
-                
-                // Linear for visuals
-                adsrAmplitudeLinear = sustainLevelLinear * curve;
-                adsrAmplitudeLinear = juce::jmax (0.0f, adsrAmplitudeLinear);
-            }
-            else
-            {
-                // CRITICAL FIX: Don't instantly cut to zero - let grains finish their Hann fade-out
-                // Use a minimum release time of 10ms (grain fade-out duration) to prevent clicks
-                // This allows grains to complete their natural Hann window fade even with 0 release
-                float minReleaseTime = 0.010f; // 10ms = grain fade duration
-                float linearProgress = juce::jmin (1.0f, adsrTime / minReleaseTime);
-                float curve = std::pow (1.0f - linearProgress, 4.0f);
-                
-                adsrAmplitude = sustainLevel * curve;
-                adsrAmplitude = juce::jmax (0.0f, adsrAmplitude);
-                
-                adsrAmplitudeLinear = sustainLevelLinear * curve;
-                adsrAmplitudeLinear = juce::jmax (0.0f, adsrAmplitudeLinear);
-            }
+            // CRITICAL: Add grain fade duration (10ms) to release time to prevent clicks
+            // This ensures grains spawned at the end of release have time to complete their fade-out
+            float grainFadeDuration = 0.010f; // 10ms Hann window fade-out
+            float effectiveReleaseTime = releaseTime + grainFadeDuration;
+            
+            float linearProgress = juce::jmin (1.0f, adsrTime / effectiveReleaseTime);
+            // Apply exponential decay: y = (1-x)^4 (smooth, natural fade)
+            float curve = std::pow (1.0f - linearProgress, 4.0f);
+            
+            // Logarithmic for audio
+            adsrAmplitude = sustainLevel * curve;
+            adsrAmplitude = juce::jmax (0.0f, adsrAmplitude);
+            
+            // Linear for visuals
+            adsrAmplitudeLinear = sustainLevelLinear * curve;
+            adsrAmplitudeLinear = juce::jmax (0.0f, adsrAmplitudeLinear);
             
             // Move to Finished phase when release complete
             if (adsrAmplitude <= 0.0f)
@@ -322,6 +310,7 @@ void Particle::updateADSR (float deltaTime)
                 adsrPhase = ADSRPhase::Finished;
             }
             break;
+        }
             
         case ADSRPhase::Finished:
             adsrAmplitude = 0.0f;
