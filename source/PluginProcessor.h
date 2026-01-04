@@ -91,7 +91,7 @@ public:
     // Particle spawning (called from GUI or MIDI) - now requires MIDI note and ADSR parameters
     void spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
                        float initialVelocity, float pitchShift, int midiNoteNumber,
-                       float attackTime, float sustainLevel, float releaseTime);
+                       float attackTime, float sustainLevel, float sustainLevelLinear, float releaseTime);
     
     // Gravity and canvas settings
     void setGravityStrength (float strength) { gravityStrength = strength; }

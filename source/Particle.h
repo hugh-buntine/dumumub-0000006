@@ -34,7 +34,7 @@ class Particle
 public:
     Particle (juce::Point<float> position, juce::Point<float> velocity, 
               const juce::Rectangle<float>& canvasBounds, int midiNoteNumber,
-              float attackTime, float sustainLevel, float releaseTime,
+              float attackTime, float sustainLevel, float sustainLevelLinear, float releaseTime,
               float initialVelocity = 1.0f, float pitchShift = 1.0f);
     ~Particle();
 
@@ -127,9 +127,11 @@ private:
     ADSRPhase adsrPhase = ADSRPhase::Attack;
     float adsrTime = 0.0f;             // Time spent in current ADSR phase
     float attackTime = 0.01f;          // Attack duration in seconds
-    float sustainLevel = 0.7f;         // Sustain level (0.0-1.0, controllable)
+    float sustainLevel = 0.7f;         // Sustain level (0.0-1.0, logarithmic for audio)
+    float sustainLevelLinear = 0.7f;   // Sustain level (0.0-1.0, linear slider value for visuals)
     float releaseTime = 0.5f;          // Release duration in seconds
-    float adsrAmplitude = 0.0f;        // Current envelope amplitude (0.0-1.0)
+    float adsrAmplitude = 0.0f;        // Current envelope amplitude (0.0-1.0, logarithmic for audio)
+    float adsrAmplitudeLinear = 0.0f;  // Current envelope amplitude (0.0-1.0, linear for visuals)
     static constexpr float decayTime = 0.2f;  // Decay duration (fixed at 200ms)
     
     // MIDI parameters

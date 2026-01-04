@@ -636,8 +636,8 @@ void Canvas::spawnParticle()
     juce::Point<float> initialVelocity = spawn->getMomentumVector() * 2.0f; // Scale up for visibility
     
     // Spawn particle in processor with manual spawn parameters
-    // Manual spawns use MIDI note -1, default attack/decay/release (0.01s, 0.1s, 0.5s), velocity 1.0, pitch 1.0
-    audioProcessor.spawnParticle (spawnPos, initialVelocity, 1.0f, 1.0f, -1, 0.01f, 0.1f, 0.5f);
+    // Manual spawns use MIDI note -1, default attack/sustain/release (0.01s, 0.7 linear/0.1 log, 0.5s), velocity 1.0, pitch 1.0
+    audioProcessor.spawnParticle (spawnPos, initialVelocity, 1.0f, 1.0f, -1, 0.01f, 0.1f, 0.7f, 0.5f);
     
     LOG_INFO("Spawned particle #" + juce::String(processorParticles->size()) + 
              " at (" + juce::String(spawnPos.x) + ", " + juce::String(spawnPos.y) + 
@@ -682,14 +682,26 @@ void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
     
     // Get current ADSR parameters from processor
     auto* attack = audioProcessor.getAPVTS().getRawParameterValue ("attack");
-    auto* decay = audioProcessor.getAPVTS().getRawParameterValue ("decay");
+    auto* sustain = audioProcessor.getAPVTS().getRawParameterValue ("sustain");
     auto* release = audioProcessor.getAPVTS().getRawParameterValue ("release");
     float attackTime = attack ? attack->load() : 0.01f;
-    float decayTime = decay ? decay->load() : 0.1f;
+    float sustainLevelLinear = sustain ? sustain->load() : 0.7f;
     float releaseTime = release ? release->load() : 0.5f;
     
-    // Spawn particle in processor with MIDI parameters
-    audioProcessor.spawnParticle (spawnPos, initialVelocity, midiVelocity, pitchShift, midiNote, attackTime, decayTime, releaseTime);
+    // Convert sustain from linear to logarithmic (same as in PluginProcessor::handleNoteOn)
+    float sustainLevel;
+    if (sustainLevelLinear < 0.001f)
+    {
+        sustainLevel = 0.0f;
+    }
+    else
+    {
+        float sustainDb = (sustainLevelLinear - 1.0f) * 60.0f; // -60dB to 0dB
+        sustainLevel = juce::Decibels::decibelsToGain(sustainDb);
+    }
+    
+    // Spawn particle in processor with MIDI parameters (pass both logarithmic and linear sustain)
+    audioProcessor.spawnParticle (spawnPos, initialVelocity, midiVelocity, pitchShift, midiNote, attackTime, sustainLevel, sustainLevelLinear, releaseTime);
     
     LOG_INFO("Spawned MIDI particle #" + juce::String(processorParticles->size()) + 
              " - Note: " + juce::String(midiNote) + 

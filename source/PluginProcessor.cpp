@@ -271,7 +271,7 @@ void PluginProcessor::removeSpawnPoint (int index)
 
 void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
                                      float initialVelocity, float pitchShift, int midiNoteNumber,
-                                     float attackTime, float sustainLevel, float releaseTime)
+                                     float attackTime, float sustainLevel, float sustainLevelLinear, float releaseTime)
 {
     const juce::ScopedLock lock (particlesLock);
     
@@ -303,9 +303,9 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
         }
     }
     
-    // Create new particle with ADSR parameters
+    // Create new particle with ADSR parameters (both logarithmic for audio, linear for visuals)
     auto* particle = new Particle (position, velocity, canvasBounds, midiNoteNumber,
-                                   attackTime, sustainLevel, releaseTime, initialVelocity, pitchShift);
+                                   attackTime, sustainLevel, sustainLevelLinear, releaseTime, initialVelocity, pitchShift);
     particle->setBounceMode (bounceMode); // Set current bounce mode
     int newIndex = particles.size();
     particles.add (particle);
@@ -366,8 +366,8 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     );
     initialVelocity *= 2.0f; // Scale up for visibility
     
-    // Spawn particle with MIDI parameters and ADSR
-    spawnParticle (spawnPos, initialVelocity, velocity, pitchShift, noteNumber, attackTime, sustainLevel, releaseTime);
+    // Spawn particle with MIDI parameters and ADSR (pass both logarithmic and linear sustain)
+    spawnParticle (spawnPos, initialVelocity, velocity, pitchShift, noteNumber, attackTime, sustainLevel, sustainLevelLinear, releaseTime);
     LOG_INFO("Particle spawned from note-on! Total particles: " + juce::String(particles.size()));
 }
 

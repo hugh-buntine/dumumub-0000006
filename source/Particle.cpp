@@ -50,7 +50,7 @@ float Particle::getHannWindowValue (float normalizedPosition)
 //==============================================================================
 Particle::Particle (juce::Point<float> position, juce::Point<float> velocity, 
                     const juce::Rectangle<float>& canvasBounds, int midiNoteNumber,
-                    float attackTime, float sustainLevel, float releaseTime,
+                    float attackTime, float sustainLevel, float sustainLevelLinear, float releaseTime,
                     float initialVelocity, float pitchShift)
     : position (position), velocity (velocity), canvasBounds (canvasBounds),
       lifeTime (0.0f), 
@@ -58,9 +58,11 @@ Particle::Particle (juce::Point<float> position, juce::Point<float> velocity,
       adsrPhase (ADSRPhase::Attack),
       adsrTime (0.0f),
       attackTime (attackTime),
-      sustainLevel (sustainLevel),
+      sustainLevel (sustainLevel),              // Logarithmic value for audio
+      sustainLevelLinear (sustainLevelLinear),  // Linear slider value for visuals
       releaseTime (releaseTime),
-      adsrAmplitude (0.0f),
+      adsrAmplitude (0.0f),                     // Logarithmic for audio
+      adsrAmplitudeLinear (0.0f),               // Linear for visuals
       initialVelocityMultiplier (initialVelocity), pitchShift (pitchShift),
       currentSampleRate (0.0), samplesSinceLastGrainTrigger (0),
       cachedTotalGrainSamples (2205),
@@ -228,9 +230,13 @@ void Particle::updateADSR (float deltaTime)
                 float linearProgress = juce::jmin (1.0f, adsrTime / attackTime);
                 // Apply exponential curve: y = x^2 (slow start, quick finish)
                 adsrAmplitude = linearProgress * linearProgress;
+                adsrAmplitudeLinear = adsrAmplitude; // Same for attack
             }
             else
+            {
                 adsrAmplitude = 1.0f; // Instant attack
+                adsrAmplitudeLinear = 1.0f;
+            }
             
             // Move to Decay phase when attack complete
             if (adsrAmplitude >= 1.0f)
@@ -247,17 +253,27 @@ void Particle::updateADSR (float deltaTime)
                 float linearProgress = juce::jmin (1.0f, adsrTime / decayTime);
                 // Apply inverse exponential: y = 1 - (1-x)^3 (quick drop initially)
                 float curve = 1.0f - std::pow (1.0f - linearProgress, 3.0f);
+                
+                // Logarithmic amplitude for audio (uses converted sustainLevel)
                 adsrAmplitude = 1.0f - (curve * (1.0f - sustainLevel));
                 adsrAmplitude = juce::jmax (sustainLevel, adsrAmplitude);
+                
+                // Linear amplitude for visuals (uses linear slider value)
+                adsrAmplitudeLinear = 1.0f - (curve * (1.0f - sustainLevelLinear));
+                adsrAmplitudeLinear = juce::jmax (sustainLevelLinear, adsrAmplitudeLinear);
             }
             else
+            {
                 adsrAmplitude = sustainLevel;
+                adsrAmplitudeLinear = sustainLevelLinear;
+            }
             
             // Move to Sustain phase when decay complete
             if (adsrTime >= decayTime)
             {
                 adsrPhase = ADSRPhase::Sustain;
                 adsrAmplitude = sustainLevel;
+                adsrAmplitudeLinear = sustainLevelLinear;
                 adsrTime = 0.0f;
             }
             break;
@@ -265,6 +281,7 @@ void Particle::updateADSR (float deltaTime)
         case ADSRPhase::Sustain:
             // Stay at sustain level while MIDI key is held
             adsrAmplitude = sustainLevel;
+            adsrAmplitudeLinear = sustainLevelLinear;
             break;
             
         case ADSRPhase::Release:
@@ -274,11 +291,20 @@ void Particle::updateADSR (float deltaTime)
                 float linearProgress = juce::jmin (1.0f, adsrTime / releaseTime);
                 // Apply exponential decay: y = (1-x)^4 (smooth, natural fade)
                 float curve = std::pow (1.0f - linearProgress, 4.0f);
+                
+                // Logarithmic for audio
                 adsrAmplitude = sustainLevel * curve;
                 adsrAmplitude = juce::jmax (0.0f, adsrAmplitude);
+                
+                // Linear for visuals
+                adsrAmplitudeLinear = sustainLevelLinear * curve;
+                adsrAmplitudeLinear = juce::jmax (0.0f, adsrAmplitudeLinear);
             }
             else
+            {
                 adsrAmplitude = 0.0f; // Instant release
+                adsrAmplitudeLinear = 0.0f;
+            }
             
             // Move to Finished phase when release complete
             if (adsrAmplitude <= 0.0f)
@@ -414,8 +440,9 @@ void Particle::bounceOff (const juce::Rectangle<float>& bounds)
 
 void Particle::draw (juce::Graphics& g)
 {
-    // Calculate base alpha from ADSR amplitude
-    float lifetimeAlpha = adsrAmplitude;
+    // Calculate base alpha from ADSR amplitude (using LINEAR slider value for visual feedback)
+    // Visual opacity matches slider position (0.5 = 50% opacity), not converted logarithmic audio amplitude
+    float lifetimeAlpha = adsrAmplitudeLinear;
     
     // Get edge crossfade info (for visual wraparound)
     const float edgeFadeZone = 50.0f;
