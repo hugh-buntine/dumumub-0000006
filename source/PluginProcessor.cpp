@@ -634,9 +634,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         lastGrainCount = totalActiveGrains;
     }
     
-    // Smooth the gain compensation using exponential smoothing (one-pole lowpass filter)
-    // Time constant: ~10ms @ 44.1kHz = smoothing over ~440 samples
-    float smoothingCoefficient = 1.0f - std::exp(-2.2f / (0.010f * getSampleRate()));
+    // Adaptive smoothing: slower for larger changes to prevent audible steps
+    // Calculate how big the change is (percentage difference)
+    float gainDifference = std::abs(targetGainCompensation - smoothedGainCompensation);
+    float relativeDifference = gainDifference / juce::jmax(0.01f, smoothedGainCompensation);
+    
+    // Time constant scales with change size: 10ms for small changes, up to 50ms for large changes
+    // This prevents rapid fluctuations when grain count changes wildly
+    float timeConstant = 0.010f + (relativeDifference * 0.040f);  // 10ms to 50ms
+    timeConstant = juce::jmin(0.050f, timeConstant);  // Cap at 50ms
+    
+    // Exponential smoothing (one-pole lowpass filter)
+    float smoothingCoefficient = 1.0f - std::exp(-2.2f / (timeConstant * getSampleRate()));
     smoothedGainCompensation += smoothingCoefficient * (targetGainCompensation - smoothedGainCompensation);
     
     float gainCompensation = smoothedGainCompensation;
