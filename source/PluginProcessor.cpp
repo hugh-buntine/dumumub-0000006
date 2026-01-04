@@ -71,11 +71,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         [](float value, int) { return juce::String (value, 1) + " Hz"; }
     ));
     
-    // Attack Time (0.001s - 2.0s) - Now controls particle ADSR attack
+    // Attack Time (0.01s - 2.0s) - Now controls particle ADSR attack
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "attack",
         "Attack",
-        juce::NormalisableRange<float> (0.001f, 2.0f, 0.001f, 0.25f),
+        juce::NormalisableRange<float> (0.01f, 2.0f, 0.001f, 0.25f),
         0.01f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
@@ -87,11 +87,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         }
     ));
     
-    // Release Time (0.001s - 5.0s) - Now controls particle ADSR release
+    // Release Time (0.01s - 5.0s) - Now controls particle ADSR release
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "release",
         "Release",
-        juce::NormalisableRange<float> (0.001f, 5.0f, 0.001f, 0.3f),
+        juce::NormalisableRange<float> (0.01f, 5.0f, 0.001f, 0.3f),
         0.5f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,

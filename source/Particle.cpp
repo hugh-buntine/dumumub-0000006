@@ -303,9 +303,9 @@ void Particle::updateADSR (float deltaTime)
             else
             {
                 // CRITICAL FIX: Don't instantly cut to zero - let grains finish their Hann fade-out
-                // Use a minimum release time of 30ms (grain fade-out duration) to prevent clicks
+                // Use a minimum release time of 10ms (grain fade-out duration) to prevent clicks
                 // This allows grains to complete their natural Hann window fade even with 0 release
-                float minReleaseTime = 0.030f; // 30ms = grain fade duration
+                float minReleaseTime = 0.010f; // 10ms = grain fade duration
                 float linearProgress = juce::jmin (1.0f, adsrTime / minReleaseTime);
                 float curve = std::pow (1.0f - linearProgress, 4.0f);
                 
@@ -773,10 +773,10 @@ float Particle::getGrainAmplitude (const Grain& grain) const
     // **FIXED-DURATION FADE-IN/FADE-OUT to prevent clicks**
     // Problem: Applying Hann window to entire grain creates extremely slow fade-in for long grains
     // For 254ms grain (11,201 samples), Hann values at start are ~0.0000002, causing clicks
-    // Solution: Use fixed 30ms fade-in/fade-out regardless of grain size
-    // Increased from 10ms to 30ms to provide gentler attack and better handle non-zero-crossing starts
+    // Solution: Use fixed 10ms fade-in/fade-out regardless of grain size
+    // This provides fast, smooth grain boundaries without clicks
     
-    const int fadeSamples = static_cast<int>(0.030f * currentSampleRate); // 30ms = ~1323 samples @ 44.1kHz
+    const int fadeSamples = static_cast<int>(0.010f * currentSampleRate); // 10ms = ~441 samples @ 44.1kHz
     
     // CRITICAL: Use the grain's OWN size, not the current particle grain size parameter
     // This allows existing grains to complete with their original size even if parameter changes
