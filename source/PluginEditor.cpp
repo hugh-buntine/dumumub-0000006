@@ -478,9 +478,21 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
 {
     // Get current ADSR parameter values
     auto attack = attackSlider.getValue();
-    auto sustain = lifespanSlider.getValue(); // Already 0.0-1.0 from parameter
+    auto sustainLinear = lifespanSlider.getValue(); // Linear 0.0-1.0 from parameter
     auto release = releaseSlider.getValue();
     constexpr float decay = 0.2f; // Fixed decay time
+    
+    // Convert sustain to logarithmic for display (match audio processing)
+    float sustain;
+    if (sustainLinear < 0.001f)
+    {
+        sustain = 0.0f;
+    }
+    else
+    {
+        float sustainDb = (sustainLinear - 1.0f) * 60.0f; // -60dB to 0dB
+        sustain = juce::Decibels::decibelsToGain(sustainDb);
+    }
     
     // Use bottom two-thirds of canvas for drawing area
     auto canvasBounds = canvas.getBounds();

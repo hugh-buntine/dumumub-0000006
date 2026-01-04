@@ -329,8 +329,24 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     
     // Get ADSR parameters
     float attackTime = apvts.getRawParameterValue("attack")->load();
-    float sustainLevel = apvts.getRawParameterValue("sustain")->load();
+    float sustainLevelLinear = apvts.getRawParameterValue("sustain")->load();
     float releaseTime = apvts.getRawParameterValue("release")->load();
+    
+    // Convert sustain from linear (0.0-1.0) to logarithmic (perceived loudness)
+    // At 0.5 slider position, we want -6dB (50% perceived loudness), not 0.5 amplitude
+    // Formula: amplitude = 10^((linear-1) * range_dB / 20)
+    // Range: 0.0 = -60dB (silence), 1.0 = 0dB (full volume)
+    float sustainLevel;
+    if (sustainLevelLinear < 0.001f)
+    {
+        sustainLevel = 0.0f; // Below 0.1% = silence
+    }
+    else
+    {
+        // Map 0.0-1.0 to -60dB to 0dB logarithmically
+        float sustainDb = (sustainLevelLinear - 1.0f) * 60.0f; // -60dB to 0dB
+        sustainLevel = juce::Decibels::decibelsToGain(sustainDb);
+    }
     
     // Use round-robin spawn point selection
     static int nextSpawnIndex = 0;
