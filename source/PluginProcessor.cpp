@@ -661,11 +661,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         
         // CRITICAL: Pre-calculate ADSR amplitudes for entire buffer (once per sample)
         // This prevents ADSR from advancing multiple times per sample (once per grain)
+        // Uses smoothed amplitude to eliminate stepping artifacts during transitions
         std::vector<float> adsrAmplitudes(buffer.getNumSamples());
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             particle->updateADSRSample (getSampleRate());
-            adsrAmplitudes[i] = particle->getADSRAmplitude();
+            adsrAmplitudes[i] = particle->getADSRAmplitudeSmoothed(); // Use smoothed value
         }
         
         // Process each active grain

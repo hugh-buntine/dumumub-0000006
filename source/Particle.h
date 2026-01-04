@@ -56,6 +56,7 @@ public:
     void updateADSRSample (double sampleRate);  // Update ADSR for single sample (for smooth short attack/release)
     void triggerRelease();
     float getADSRAmplitude() const { return adsrAmplitude; }
+    float getADSRAmplitudeSmoothed() const { return adsrAmplitudeSmoothed; } // Smoothed version without stepping artifacts
     
     // Audio grain getters
     float getGrainSizeMs() const { return grainSizeMs; }
@@ -133,6 +134,7 @@ private:
     float releaseTime = 0.5f;          // Release duration in seconds
     float adsrAmplitude = 0.0f;        // Current envelope amplitude (0.0-1.0, logarithmic for audio)
     float adsrAmplitudeLinear = 0.0f;  // Current envelope amplitude (0.0-1.0, linear for visuals)
+    float adsrAmplitudeSmoothed = 0.0f; // Smoothed ADSR amplitude to eliminate stepping artifacts
     static constexpr float decayTime = 0.2f;  // Decay duration (fixed at 200ms)
     
     // MIDI parameters

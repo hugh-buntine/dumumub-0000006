@@ -302,8 +302,18 @@ void Particle::updateADSR (float deltaTime)
             }
             else
             {
-                adsrAmplitude = 0.0f; // Instant release
-                adsrAmplitudeLinear = 0.0f;
+                // CRITICAL FIX: Don't instantly cut to zero - let grains finish their Hann fade-out
+                // Use a minimum release time of 30ms (grain fade-out duration) to prevent clicks
+                // This allows grains to complete their natural Hann window fade even with 0 release
+                float minReleaseTime = 0.030f; // 30ms = grain fade duration
+                float linearProgress = juce::jmin (1.0f, adsrTime / minReleaseTime);
+                float curve = std::pow (1.0f - linearProgress, 4.0f);
+                
+                adsrAmplitude = sustainLevel * curve;
+                adsrAmplitude = juce::jmax (0.0f, adsrAmplitude);
+                
+                adsrAmplitudeLinear = sustainLevelLinear * curve;
+                adsrAmplitudeLinear = juce::jmax (0.0f, adsrAmplitudeLinear);
             }
             
             // Move to Finished phase when release complete
@@ -329,6 +339,12 @@ void Particle::updateADSRSample (double sampleRate)
     
     float deltaTime = static_cast<float>(1.0 / sampleRate);
     updateADSR (deltaTime);
+    
+    // CRITICAL: Apply one-pole lowpass smoothing to eliminate stepping artifacts
+    // This removes the "zipper noise" / static during ADSR transitions
+    // Time constant: ~0.5ms (very fast, just removes stepping, doesn't affect envelope shape)
+    float smoothingCoeff = 1.0f - std::exp(-2.2f / (0.0005f * static_cast<float>(sampleRate)));
+    adsrAmplitudeSmoothed += smoothingCoeff * (adsrAmplitude - adsrAmplitudeSmoothed);
 }
 
 void Particle::triggerRelease()
