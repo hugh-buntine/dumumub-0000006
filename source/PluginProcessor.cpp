@@ -506,6 +506,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Clear all output channels
     for (auto i = 0; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
+    
+    // CRITICAL FIX: Store expected starting values for continuity checking
+    // This helps us detect and diagnose buffer boundary discontinuities
+    float expectedStartLeft = lastBufferOutputLeft;
+    float expectedStartRight = lastBufferOutputRight;
 
     // Merge in any pending MIDI messages from UI thread
     {
@@ -598,16 +603,43 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     
     // Automatic gain compensation to prevent clipping when many grains overlap
     // Use a smooth curve that doesn't reduce gain too much for reasonable grain counts
-    float gainCompensation = 1.0f;
+    float targetGainCompensation = 1.0f;
     if (totalActiveGrains > 1)
     {
         // Gentle compression curve: reduces gain as grain count increases
         // At 4 grains: ~0.7x, at 8 grains: ~0.5x, at 16 grains: ~0.35x
-        gainCompensation = 1.0f / std::sqrt(static_cast<float>(totalActiveGrains));
+        targetGainCompensation = 1.0f / std::sqrt(static_cast<float>(totalActiveGrains));
         
         // Clamp to reasonable range (never reduce by more than 90%)
-        gainCompensation = juce::jmax(0.1f, gainCompensation);
+        targetGainCompensation = juce::jmax(0.1f, targetGainCompensation);
     }
+    
+    // CRITICAL FIX: Smooth gain compensation changes to avoid clicks!
+    // When grain count changes, we can't instantly change volume - must ramp smoothly
+    static float smoothedGainCompensation = 1.0f;
+    static int lastGrainCount = 0;
+    
+    // If grain count changed, log it for diagnosis
+    if (totalActiveGrains != lastGrainCount)
+    {
+        float gainChange = std::abs(targetGainCompensation - smoothedGainCompensation);
+        if (gainChange > 0.05f)  // >5% change
+        {
+            LOG_INFO("GRAIN COUNT CHANGE: " + juce::String(lastGrainCount) + " → " + 
+                    juce::String(totalActiveGrains) + " grains, " +
+                    "gain " + juce::String(smoothedGainCompensation, 3) + " → " + 
+                    juce::String(targetGainCompensation, 3) + 
+                    " (Δ=" + juce::String((targetGainCompensation - smoothedGainCompensation) * 100, 1) + "%)");
+        }
+        lastGrainCount = totalActiveGrains;
+    }
+    
+    // Smooth the gain compensation using exponential smoothing (one-pole lowpass filter)
+    // Time constant: ~10ms @ 44.1kHz = smoothing over ~440 samples
+    float smoothingCoefficient = 1.0f - std::exp(-2.2f / (0.010f * getSampleRate()));
+    smoothedGainCompensation += smoothingCoefficient * (targetGainCompensation - smoothedGainCompensation);
+    
+    float gainCompensation = smoothedGainCompensation;
     
     // Process each particle's grains
     for (auto* particle : particles)
@@ -744,6 +776,25 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
+                // DIAGNOSTIC: Track very first sample of each buffer for click detection
+                static int bufferFirstSampleLog = 0;
+                bool isVeryFirstSample = (i == 0);
+                
+                if (isVeryFirstSample && bufferFirstSampleLog < 20)
+                {
+                    bufferFirstSampleLog++;
+                    
+                    // Calculate what THIS grain will contribute to first sample
+                    float previewGrainAmp = particle->getGrainAmplitude(grain);
+                    
+                    LOG_INFO("FIRST SAMPLE PREVIEW #" + juce::String(bufferFirstSampleLog) + 
+                            ": grain@start=" + juce::String(grain.startSample) +
+                            ", grainPos=" + juce::String(grainPosition) +
+                            ", grainAmp=" + juce::String(previewGrainAmp, 6) +
+                            ", activeGrains=" + juce::String(grains.size()) +
+                            ", expectedContrib=" + juce::String(previewGrainAmp * constantAmplitude, 6));
+                }
+                
                 // DIAGNOSTIC: Log first and last sample of each grain to catch boundary issues
                 static int sampleLogCount = 0;
                 bool isFirstSample = (grainPosition + i == 0);
@@ -823,10 +874,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 float maxSample = juce::jmax(y0, y1, y2, y3);
                 audioSample = juce::jlimit(minSample, maxSample, audioSample);
                 
+                // DIAGNOSTIC: Track denormal protection impact at boundaries
+                float audioSampleBeforeDenormal = audioSample;
+                
                 // Aggressive denormal protection: flush very small numbers to zero
                 // This prevents CPU thrashing and eliminates quiet static/artifacts
                 if (std::abs(audioSample) < 1e-6f)  // Increased threshold from 1e-8f
                     audioSample = 0.0f;
+                
+                bool denormalApplied = (audioSampleBeforeDenormal != audioSample);
                 
                 // CRITICAL FIX: Calculate grain amplitude PER-SAMPLE as grain plays through
                 // Create temporary grain with current sample position for amplitude calculation
@@ -870,19 +926,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 float leftSample = audioSample * leftGain;
                 float rightSample = audioSample * rightGain;
                 
-                // DIAGNOSTIC: Log grain boundary sample values WITH EXACT PRECISION
+                // DIAGNOSTIC: Track soft clipping at boundaries (BEFORE actual clipping)
+                float leftBeforeClip = leftSample;
+                float rightBeforeClip = rightSample;
+                
+                // DIAGNOSTIC: Log grain boundary sample values WITH EXACT PRECISION INCLUDING DENORMAL/CLIPPING
                 if ((isFirstSample || isLastSample) && sampleLogCount <= 30)
                 {
                     const char* boundary = isFirstSample ? "START" : "END";
                     float bufferBefore = leftChannel ? leftChannel[i] : 0.0f;
-                    float bufferAfter = bufferBefore + leftSample;
+                    float bufferAfter = bufferBefore + leftBeforeClip;  // BEFORE clipping is applied
                     
                     // Check if leftSample is actually non-zero despite grain being at boundary
                     bool isActuallyNonZero = (std::abs(leftSample) > 1e-10f);
                     
+                    juce::String denormalMsg = denormalApplied ? " DENORMAL!" : "";
+                    
                     LOG_INFO("GRAIN BOUNDARY " + juce::String(boundary) + 
                             ": grainPos=" + juce::String(grainPosition + i) +
                             ", grainAmp=" + juce::String(grainAmplitude, 10) +
+                            ", audioRaw=" + juce::String(audioSampleBeforeDenormal, 10) +
+                            ", audioAfterDenorm=" + juce::String(audioSample, 10) + denormalMsg +
                             ", leftGain=" + juce::String(leftGain, 10) +
                             ", leftSample=" + juce::String(leftSample, 10) +
                             ", NON-ZERO=" + juce::String(isActuallyNonZero ? "YES!" : "no") +
@@ -929,6 +993,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     leftSample = std::tanh(leftSample * 0.9f) / 0.9f; // Normalize back
                 if (std::abs(rightSample) > 0.9f)
                     rightSample = std::tanh(rightSample * 0.9f) / 0.9f;
+                
+                bool leftClipped = (leftBeforeClip != leftSample);
+                bool rightClipped = (rightBeforeClip != rightSample);
                 
                 // Write to output with panning using direct pointer access
                 if (leftChannel)
@@ -989,6 +1056,73 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         particle->updateGrains (buffer.getNumSamples());
     }
     
+    // ============================================================================
+    // BUFFER BOUNDARY CLICK FIX - TEMPORARILY DISABLED TO DIAGNOSE ROOT CAUSE
+    // ============================================================================
+    // Apply smooth transition at buffer start if there's a discontinuity
+    // This fixes clicks caused by overlapping grains with non-aligned phases
+    if (false && totalNumOutputChannels >= 1 && totalActiveGrains > 1)  // DISABLED
+    {
+        float* leftChannel = buffer.getWritePointer(0);
+        float* rightChannel = totalNumOutputChannels >= 2 ? buffer.getWritePointer(1) : nullptr;
+        
+        // Check for discontinuity at buffer start
+        float actualStartLeft = leftChannel[0];
+        float discontinuity = actualStartLeft - expectedStartLeft;
+        float absDiscontinuity = std::abs(discontinuity);
+        
+        // Only apply fix if discontinuity exceeds threshold (0.0003 = ~-70dB)
+        // Lowered threshold to catch smaller clicks
+        if (absDiscontinuity > 0.0003f && buffer.getNumSamples() > 16)
+        {
+            // Use 16-sample shaped crossfade for smoother transition
+            // 16 samples @ 44.1kHz = 0.36ms (still inaudible as transition)
+            const int crossfadeLength = 16;
+            
+            for (int i = 0; i < crossfadeLength && i < buffer.getNumSamples(); ++i)
+            {
+                // S-curve (cubic ease-in-out) for smoother transition than linear
+                // This avoids the "diagonal line" artifact
+                float t = static_cast<float>(i) / static_cast<float>(crossfadeLength - 1);
+                
+                // Cubic ease-in-out formula: smooth acceleration and deceleration
+                float fadeIn;
+                if (t < 0.5f)
+                    fadeIn = 4.0f * t * t * t;  // Ease in (accelerate)
+                else
+                {
+                    float f = (2.0f * t - 2.0f);
+                    fadeIn = 1.0f + (f * f * f) / 2.0f;  // Ease out (decelerate)
+                }
+                
+                // Apply shaped fade to the discontinuity
+                float correction = discontinuity * (1.0f - fadeIn);
+                leftChannel[i] -= correction;
+                
+                if (rightChannel)
+                {
+                    float rightDiscontinuity = rightChannel[i] - expectedStartRight;
+                    float rightCorrection = rightDiscontinuity * (1.0f - fadeIn);
+                    rightChannel[i] -= rightCorrection;
+                }
+            }
+            
+            // Log the fix application
+            static int fixApplicationCount = 0;
+            fixApplicationCount++;
+            
+            if (fixApplicationCount <= 10)
+            {
+                LOG_INFO("CLICK FIX APPLIED #" + juce::String(fixApplicationCount) + 
+                        ": discontinuity=" + juce::String(absDiscontinuity, 6) +
+                        ", before=" + juce::String(actualStartLeft, 6) +
+                        ", after=" + juce::String(leftChannel[0], 6) +
+                        ", crossfadeLen=16 (S-curve)" +
+                        ", activeGrains=" + juce::String(totalActiveGrains));
+            }
+        }
+    }
+    
     // DIAGNOSTIC: Log grain states at buffer end to understand discontinuities
     static int bufferEndLogCount = 0;
     bufferEndLogCount++;
@@ -1037,7 +1171,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         float firstSampleThisBuffer = leftChannel[0];
         float bufferBoundaryJump = std::abs(firstSampleThisBuffer - lastBufferEndSample);
         
-        if (bufferBoundaryJump > 0.001f && bufferCount > 1)
+        // LOWER THRESHOLD to catch all discontinuities (even tiny ones)
+        if (bufferBoundaryJump > 0.0003f && bufferCount > 1)  // Changed from 0.001f
         {
             clickDetections++;
             if (clickDetections <= 15)  // Reduce to 15 for more detailed logging
@@ -1045,6 +1180,162 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Log detailed grain states at the moment of click
                 juce::String prevGrainStates, currGrainStates;
                 juce::String sourceAudioInfo;
+                
+                // Build comprehensive report to verify grain advancement
+                juce::String detailedReport = "\n";
+                detailedReport += "╔═══════════════════════════════════════════════════════════════════╗\n";
+                detailedReport += "║ BUFFER BOUNDARY CLICK DETECTED #" + juce::String(clickDetections).paddedRight(' ', 31) + "║\n";
+                detailedReport += "╠═══════════════════════════════════════════════════════════════════╣\n";
+                detailedReport += "║ Jump: " + juce::String(bufferBoundaryJump, 8).paddedRight(' ', 59) + "║\n";
+                detailedReport += "║ Last buffer end:   " + juce::String(lastBufferEndSample, 10).paddedRight(' ', 45) + "║\n";
+                detailedReport += "║ This buffer start: " + juce::String(firstSampleThisBuffer, 10).paddedRight(' ', 45) + "║\n";
+                detailedReport += "║ Buffer #" + juce::String(bufferCount).paddedRight(' ', 56) + "║\n";
+                detailedReport += "║ Active grains: " + juce::String(totalActiveGrains).paddedRight(' ', 49) + "║\n";
+                detailedReport += "╠═══════════════════════════════════════════════════════════════════╣\n";
+                detailedReport += "║ GRAIN STATES (verifying 1-sample advancement between buffers)    ║\n";
+                detailedReport += "╠═══════════════════════════════════════════════════════════════════╣\n";
+                
+                int grainNum = 0;
+                for (auto* particle : particles)
+                {
+                    auto& grains = particle->getActiveGrains();
+                    float pitchShift = particle->getPitchShift();
+                    int totalGrainSamples = particle->getTotalGrainSamples();
+                    
+                    for (const auto& grain : grains)
+                    {
+                        grainNum++;
+                        
+                        // Current grain state (what will render first sample of this buffer)
+                        float currAmp = particle->getGrainAmplitude(grain);
+                        int currPos = grain.playbackPosition;
+                        
+                        // Calculate what position this grain was at for the LAST sample of previous buffer
+                        // If grain advanced correctly, it should be currPos - 1
+                        int expectedPrevPos = currPos - 1;
+                        
+                        // Create temporary grain at expected previous position to check amplitude
+                        Grain prevGrain = grain;
+                        prevGrain.playbackPosition = expectedPrevPos;
+                        float prevAmp = (expectedPrevPos >= 0) ? particle->getGrainAmplitude(prevGrain) : 0.0f;
+                        
+                        float ampChange = currAmp - prevAmp;
+                        
+                        detailedReport += "║ Grain " + juce::String(grainNum).paddedLeft(' ', 2) + ": ";
+                        detailedReport += "pos " + juce::String(expectedPrevPos).paddedLeft(' ', 6) + 
+                                        " → " + juce::String(currPos).paddedLeft(' ', 6) + " ";
+                        detailedReport += "(amp " + juce::String(prevAmp, 6) + 
+                                        " → " + juce::String(currAmp, 6) + ", ";
+                        detailedReport += "Δ=" + juce::String(ampChange, 7) + ")";
+                        
+                        // Calculate percentage through grain
+                        float percentComplete = (100.0f * currPos) / totalGrainSamples;
+                        detailedReport += " [" + juce::String(percentComplete, 1) + "%]";
+                        
+                        // Pad to 65 chars + ║ marker
+                        detailedReport = detailedReport.paddedRight(' ', 65 + 4) + "║\n";
+                    }
+                }
+                
+                if (grainNum == 0)
+                {
+                    detailedReport += juce::String("║ (No active grains - click from ADSR or other source)").paddedRight(' ', 68) + "║\n";
+                }
+                
+                // NEW: Calculate actual grain sample contributions to verify sum
+                detailedReport += "╠═══════════════════════════════════════════════════════════════════╣\n";
+                detailedReport += "║ ACTUAL GRAIN SAMPLE VALUES (verifying sum matches buffer output) ║\n";
+                detailedReport += "╠═══════════════════════════════════════════════════════════════════╣\n";
+                
+                float prevSumOfGrains = 0.0f;
+                float currSumOfGrains = 0.0f;
+                int grainSampleNum = 0;
+                
+                for (auto* particle : particles)
+                {
+                    auto& grains = particle->getActiveGrains();
+                    float pitchShift = particle->getPitchShift();
+                    
+                    // Get constant amplitude factors (same calculation as in rendering loop)
+                    auto edgeFade = particle->getEdgeFade();
+                    float constantAmplitude = masterGainLinear;
+                    constantAmplitude *= edgeFade.amplitude;
+                    constantAmplitude *= particle->getInitialVelocityMultiplier();
+                    constantAmplitude *= gainCompensation;
+                    
+                    // Get pan gains
+                    float panAngle = (edgeFade.pan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
+                    float leftPanGain = std::cos(panAngle);
+                    
+                    for (const auto& grain : grains)
+                    {
+                        grainSampleNum++;
+                        
+                        // CRITICAL: grain.playbackPosition has ALREADY been advanced by updateGrains()!
+                        // We need to calculate using the positions that were ACTUALLY rendered
+                        // Subtract samplesRenderedThisBuffer to get back to the start of the buffer
+                        int renderedSamples = grain.samplesRenderedThisBuffer;
+                        if (renderedSamples <= 0) renderedSamples = 512; // Fallback to buffer size
+                        
+                        int currPosInBuffer = grain.playbackPosition;  // Position AFTER updateGrains
+                        int startPosInBuffer = currPosInBuffer - renderedSamples;  // Position at START of buffer
+                        
+                        // Calculate PREVIOUS sample (last sample of previous buffer)
+                        int prevPos = startPosInBuffer - 1;
+                        if (prevPos >= 0)
+                        {
+                            Grain prevGrain = grain;
+                            prevGrain.playbackPosition = prevPos;
+                            float prevGrainAmp = particle->getGrainAmplitude(prevGrain);
+                            
+                            // Get source audio sample (simplified - assume mono mix)
+                            float prevSourcePos = grain.startSample + (prevPos * pitchShift);
+                            while (prevSourcePos >= audioFileBuffer.getNumSamples()) prevSourcePos -= audioFileBuffer.getNumSamples();
+                            int prevSourceSample = static_cast<int>(prevSourcePos);
+                            float prevAudioSample = 0.0f;
+                            for (int ch = 0; ch < audioFileBuffer.getNumChannels(); ++ch)
+                                prevAudioSample += audioFileBuffer.getReadPointer(ch)[prevSourceSample];
+                            prevAudioSample /= audioFileBuffer.getNumChannels();
+                            
+                            float prevTotalAmp = prevGrainAmp * constantAmplitude;
+                            float prevLeftSample = prevAudioSample * prevTotalAmp * leftPanGain;
+                            prevSumOfGrains += prevLeftSample;
+                            
+                            // Calculate CURRENT sample (first sample of current buffer)  
+                            Grain currGrain = grain;
+                            currGrain.playbackPosition = startPosInBuffer;  // Position at START of buffer
+                            float currGrainAmp = particle->getGrainAmplitude(currGrain);
+                            float currSourcePos = grain.startSample + (startPosInBuffer * pitchShift);
+                            while (currSourcePos >= audioFileBuffer.getNumSamples()) currSourcePos -= audioFileBuffer.getNumSamples();
+                            int currSourceSample = static_cast<int>(currSourcePos);
+                            float currAudioSample = 0.0f;
+                            for (int ch = 0; ch < audioFileBuffer.getNumChannels(); ++ch)
+                                currAudioSample += audioFileBuffer.getReadPointer(ch)[currSourceSample];
+                            currAudioSample /= audioFileBuffer.getNumChannels();
+                            
+                            float currTotalAmp = currGrainAmp * constantAmplitude;
+                            float currLeftSample = currAudioSample * currTotalAmp * leftPanGain;
+                            currSumOfGrains += currLeftSample;
+                            
+                            detailedReport += "║ Grain " + juce::String(grainSampleNum).paddedLeft(' ', 2) + " samples: ";
+                            detailedReport += juce::String(prevLeftSample, 8) + " → " + juce::String(currLeftSample, 8);
+                            detailedReport += " (Δ=" + juce::String(currLeftSample - prevLeftSample, 8) + ")";
+                            detailedReport = detailedReport.paddedRight(' ', 68) + "║\n";
+                        }
+                    }
+                }
+                
+                detailedReport += "╠═══════════════════════════════════════════════════════════════════╣\n";
+                detailedReport += juce::String("║ GRAIN SUM VERIFICATION:").paddedRight(' ', 68) + "║\n";
+                detailedReport += "║   Prev sum: " + juce::String(prevSumOfGrains, 10).paddedRight(' ', 54) + "║\n";
+                detailedReport += "║   Curr sum: " + juce::String(currSumOfGrains, 10).paddedRight(' ', 54) + "║\n";
+                detailedReport += "║   Expected last buffer end:  " + juce::String(lastBufferEndSample, 10).paddedRight(' ', 35) + "║\n";
+                detailedReport += "║   Actual first buffer start: " + juce::String(firstSampleThisBuffer, 10).paddedRight(' ', 35) + "║\n";
+                detailedReport += "║   Sum discontinuity: " + juce::String(currSumOfGrains - prevSumOfGrains, 10).paddedRight(' ', 45) + "║\n";
+                detailedReport += "║   Buffer discontinuity: " + juce::String(firstSampleThisBuffer - lastBufferEndSample, 10).paddedRight(' ', 41) + "║\n";
+                detailedReport += "╚═══════════════════════════════════════════════════════════════════╝";
+                
+                LOG_WARNING(detailedReport.toStdString());
                 
                 for (auto* particle : particles)
                 {
@@ -1122,6 +1413,33 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         
         // Remember last sample of this buffer for next buffer's boundary check
         lastBufferEndSample = leftChannel[buffer.getNumSamples() - 1];
+        
+        // CRITICAL FIX: Store the actual output values for next buffer's continuity
+        lastBufferOutputLeft = lastBufferEndSample;
+        if (totalNumOutputChannels >= 2)
+        {
+            float* rightChannel = buffer.getWritePointer(1);
+            lastBufferOutputRight = rightChannel[buffer.getNumSamples() - 1];
+        }
+        
+        // DIAGNOSTIC: Check if our prediction was correct
+        static int continuityCheckCount = 0;
+        continuityCheckCount++;
+        
+        if (continuityCheckCount % 50 == 0 && bufferCount > 1)
+        {
+            float actualStartLeft = leftChannel[0];
+            float continuityError = std::abs(actualStartLeft - expectedStartLeft);
+            
+            if (continuityError > 0.0001f)
+            {
+                LOG_WARNING("CONTINUITY MISMATCH: Expected start=" + juce::String(expectedStartLeft, 6) + 
+                           " but got " + juce::String(actualStartLeft, 6) + 
+                           " (error=" + juce::String(continuityError, 6) + ")" +
+                           " at buffer #" + juce::String(bufferCount) + 
+                           " with " + juce::String(totalActiveGrains) + " active grains");
+            }
+        }
         
         // More frequent logging: every 200 buffers (was 1000)
         if (bufferCount % 200 == 0)

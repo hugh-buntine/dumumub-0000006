@@ -144,6 +144,10 @@ private:
     // Timing for particle updates
     double lastUpdateTime = 0.0;
     
+    // Buffer boundary continuity (to prevent clicks when grains overlap)
+    float lastBufferOutputLeft = 0.0f;
+    float lastBufferOutputRight = 0.0f;
+    
     // MIDI note handling helpers
     void handleNoteOn (int noteNumber, float velocity, float pitchShift);
     void handleNoteOff (int noteNumber);
