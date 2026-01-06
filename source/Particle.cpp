@@ -247,12 +247,12 @@ void Particle::updateADSR (float deltaTime)
             break;
             
         case ADSRPhase::Decay:
-            // Exponential decay from 1.0 to sustain level (quick drop, slow tail)
+            // Exponential decay from 1.0 to sustain level (smooth, natural transition)
             if (decayTime > 0.0f)
             {
                 float linearProgress = juce::jmin (1.0f, adsrTime / decayTime);
-                // Apply inverse exponential: y = 1 - (1-x)^3 (quick drop initially)
-                float curve = 1.0f - std::pow (1.0f - linearProgress, 3.0f);
+                // Apply gentler curve: y = 1 - (1-x)^2 (smoother transition, not as aggressive as ^3)
+                float curve = 1.0f - std::pow (1.0f - linearProgress, 2.0f);
                 
                 // Logarithmic amplitude for audio (uses converted sustainLevel)
                 adsrAmplitude = 1.0f - (curve * (1.0f - sustainLevel));
@@ -286,7 +286,8 @@ void Particle::updateADSR (float deltaTime)
             
         case ADSRPhase::Release:
         {
-            // Exponential release from sustain level to 0.0 (smooth fade)
+            // Exponential release from CURRENT level (not sustain) to 0.0 (smooth fade)
+            // This ensures smooth release even if triggered during Attack or Decay phase
             // CRITICAL: Add grain fade duration (10ms) to release time to prevent clicks
             // This ensures grains spawned at the end of release have time to complete their fade-out
             float grainFadeDuration = 0.010f; // 10ms Hann window fade-out
@@ -296,12 +297,12 @@ void Particle::updateADSR (float deltaTime)
             // Apply exponential decay: y = (1-x)^4 (smooth, natural fade)
             float curve = std::pow (1.0f - linearProgress, 4.0f);
             
-            // Logarithmic for audio
-            adsrAmplitude = sustainLevel * curve;
+            // Logarithmic for audio - release from wherever we were when release was triggered
+            adsrAmplitude = releaseStartAmplitude * curve;
             adsrAmplitude = juce::jmax (0.0f, adsrAmplitude);
             
-            // Linear for visuals
-            adsrAmplitudeLinear = sustainLevelLinear * curve;
+            // Linear for visuals - release from wherever we were when release was triggered
+            adsrAmplitudeLinear = releaseStartAmplitudeLinear * curve;
             adsrAmplitudeLinear = juce::jmax (0.0f, adsrAmplitudeLinear);
             
             // Move to Finished phase when release complete
@@ -341,6 +342,10 @@ void Particle::triggerRelease()
     // Transition from Attack, Decay, or Sustain to Release phase
     if (adsrPhase == ADSRPhase::Attack || adsrPhase == ADSRPhase::Decay || adsrPhase == ADSRPhase::Sustain)
     {
+        // Capture the current amplitude to start release from wherever we are
+        releaseStartAmplitude = adsrAmplitude;
+        releaseStartAmplitudeLinear = adsrAmplitudeLinear;
+        
         adsrPhase = ADSRPhase::Release;
         adsrTime = 0.0f;
     }

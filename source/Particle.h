@@ -135,7 +135,9 @@ private:
     float adsrAmplitude = 0.0f;        // Current envelope amplitude (0.0-1.0, logarithmic for audio)
     float adsrAmplitudeLinear = 0.0f;  // Current envelope amplitude (0.0-1.0, linear for visuals)
     float adsrAmplitudeSmoothed = 0.0f; // Smoothed ADSR amplitude to eliminate stepping artifacts
-    static constexpr float decayTime = 0.2f;  // Decay duration (fixed at 200ms)
+    float releaseStartAmplitude = 0.0f; // Amplitude at which release was triggered (for smooth release from any phase)
+    float releaseStartAmplitudeLinear = 0.0f; // Linear amplitude at which release was triggered
+    static constexpr float decayTime = 0.3f;  // Decay duration (fixed at 300ms for smooth transition)
     
     // MIDI parameters
     float initialVelocityMultiplier = 1.0f; // MIDI velocity mapped to 0.0-1.0
