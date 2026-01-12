@@ -51,30 +51,6 @@ juce::CriticalSection& Canvas::getParticlesLock()
 }
 
 //==============================================================================
-void Canvas::setBreakCpuMode (bool enabled)
-{
-    breakCpuMode = enabled;
-    
-    if (enabled)
-    {
-        // Unlimited mode
-        maxSpawnPoints = std::numeric_limits<int>::max();
-        maxMassPoints = std::numeric_limits<int>::max();
-        maxParticles = std::numeric_limits<int>::max();
-        audioProcessor.setMaxParticles (std::numeric_limits<int>::max());
-        LOG_INFO("Break CPU mode enabled - unlimited particles/masses/spawn points");
-    }
-    else
-    {
-        // Normal limits
-        maxSpawnPoints = 8;
-        maxMassPoints = 4;
-        maxParticles = 8;
-        audioProcessor.setMaxParticles (8);
-        LOG_INFO("Break CPU mode disabled - limited to 4 masses, 8 spawn points, 8 particles");
-    }
-}
-
 void Canvas::setBounceMode (bool enabled)
 {
     bounceMode = enabled;
@@ -123,7 +99,7 @@ void Canvas::resized()
 void Canvas::newMassPoint()
 {
     // Check limit
-    if (!breakCpuMode && massPoints.size() >= maxMassPoints)
+    if (massPoints.size() >= maxMassPoints)
     {
         LOG_WARNING("Maximum mass points reached (" + juce::String(maxMassPoints) + ")");
         return;
@@ -176,7 +152,7 @@ void Canvas::newMassPoint()
 void Canvas::newSpawnPoint()
 {
     // Check limit
-    if (!breakCpuMode && spawnPoints.size() >= maxSpawnPoints)
+    if (spawnPoints.size() >= maxSpawnPoints)
     {
         LOG_WARNING("Maximum spawn points reached (" + juce::String(maxSpawnPoints) + ")");
         return;
@@ -350,15 +326,15 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
         juce::PopupMenu menu;
         menu.setLookAndFeel (&popupMenuLookAndFeel);
         
-        // Check limits based on break CPU mode
-        bool canAddMass = breakCpuMode || massPoints.size() < maxMassPoints;
-        bool canAddSpawn = breakCpuMode || spawnPoints.size() < maxSpawnPoints;
+        // Check limits
+        bool canAddMass = massPoints.size() < maxMassPoints;
+        bool canAddSpawn = spawnPoints.size() < maxSpawnPoints;
         
         LOG_INFO("Canvas::mouseDown - Menu options - Can add mass: " + 
                  juce::String(canAddMass ? "Yes" : "No") + ", Can add spawn: " + 
                  juce::String(canAddSpawn ? "Yes" : "No"));
         
-        // Add menu items (greyed out if at limit and not in break CPU mode)
+        // Add menu items (greyed out if at limit)
         menu.addItem (1, "mass", canAddMass);
         menu.addItem (2, "emitter", canAddSpawn);
         
@@ -372,7 +348,7 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                            {
                                LOG_INFO("Canvas::mouseDown - Menu result: " + juce::String(result));
                                
-                               if (result == 1 && (breakCpuMode || massPoints.size() < maxMassPoints))
+                               if (result == 1 && massPoints.size() < maxMassPoints)
                                {
                                    LOG_INFO("Canvas - Adding mass point at (" + 
                                             juce::String(mousePos.x, 2) + ", " + 
@@ -411,7 +387,7 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                                    massPoints.add (mass);
                                    LOG_INFO("Added mass point at (" + juce::String(mousePos.x) + ", " + juce::String(mousePos.y) + ") - Total: " + juce::String(massPoints.size()));
                                }
-                               else if (result == 2 && (breakCpuMode || spawnPoints.size() < maxSpawnPoints))
+                               else if (result == 2 && spawnPoints.size() < maxSpawnPoints)
                                {
                                    LOG_INFO("Canvas - Adding spawn point at (" + 
                                             juce::String(mousePos.x, 2) + ", " + 

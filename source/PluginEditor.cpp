@@ -66,15 +66,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     graphicsButtonPressedHover = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONPRESSEDHOVER_png, 
                                                                   BinaryData::GRAPHICSBUTTONPRESSEDHOVER_pngSize);
     
-    breakCpuButtonUnpressed = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUUNPRESSED_png, 
-                                                               BinaryData::BREAKCPUUNPRESSED_pngSize);
-    breakCpuButtonUnpressedHover = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUUNPRESSEDHOVER_png, 
-                                                                    BinaryData::BREAKCPUUNPRESSEDHOVER_pngSize);
-    breakCpuButtonPressed = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUPRESSED_png, 
-                                                             BinaryData::BREAKCPUPRESSED_pngSize);
-    breakCpuButtonPressedHover = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUPRESSEDHOVER_png, 
-                                                                  BinaryData::BREAKCPUPRESSEDHOVER_pngSize);
-    
     // Setup Graphics button
     addAndMakeVisible (graphicsButton);
     graphicsButton.setImages (graphicsButtonUnpressed, graphicsButtonUnpressedHover,
@@ -84,17 +75,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                  juce::String(graphicsButton.getToggleState() ? "ON" : "OFF"));
         // Update canvas bounce mode based on button state
         canvas.setBounceMode (graphicsButton.getToggleState());
-    };
-    
-    // Setup Break CPU button
-    addAndMakeVisible (breakCpuButton);
-    breakCpuButton.setImages (breakCpuButtonUnpressed, breakCpuButtonUnpressedHover,
-                             breakCpuButtonPressed, breakCpuButtonPressedHover);
-    breakCpuButton.onClick = [this]() {
-        LOG_INFO("PluginEditor - Break CPU button clicked, new state: " + 
-                 juce::String(breakCpuButton.getToggleState() ? "ON" : "OFF"));
-        // Update canvas limits based on button state
-        canvas.setBreakCpuMode (breakCpuButton.getToggleState());
     };
     
     // Load and set star image for particles
@@ -764,7 +744,8 @@ void PluginEditor::resized()
     
     // Row 3: Frequency (left), Master Gain (right) - moved down 5px, then up 2px = +3px
     grainFreqSlider.setBounds (leftColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
-    masterGainSlider.setBounds (rightColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
+    // Master Gain slider: positioned at (264, 750) with 200px length
+    masterGainSlider.setBounds (264, 750, 200, sliderHeight);
     
     // Image buttons below slider cases
     // Slider cases end at y=745 (560 + 185)
@@ -773,10 +754,9 @@ void PluginEditor::resized()
     int buttonHeight = 40;
     int buttonSpacing = 15; // Space between buttons
     
-    // Center both buttons horizontally in the slider cases area (40, 415 wide)
+    // Position graphics button on the left (where it was with break CPU button)
     int totalWidth = buttonWidth * 2 + buttonSpacing;
     int startX = sliderCasesX + (415 - totalWidth) / 2;
     
     graphicsButton.setBounds (startX, buttonY, buttonWidth, buttonHeight);
-    breakCpuButton.setBounds (startX + buttonWidth + buttonSpacing, buttonY, buttonWidth, buttonHeight);
 }

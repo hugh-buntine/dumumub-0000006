@@ -93,9 +93,62 @@ public:
         }
     }
     
-private:
+protected:
     juce::Image knobImage;
     juce::Image knobHoverImage;
+};
+
+//==============================================================================
+// Custom LookAndFeel for gain slider with scaling knob
+class GainSliderLookAndFeel : public CustomSliderLookAndFeel
+{
+public:
+    GainSliderLookAndFeel() = default;
+    
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                          float sliderPos, float minSliderPos, float maxSliderPos,
+                          juce::Slider::SliderStyle style, juce::Slider& slider) override
+    {
+        if (style != juce::Slider::LinearHorizontal)
+        {
+            CustomSliderLookAndFeel::drawLinearSlider (g, x, y, width, height, sliderPos, 
+                                                        minSliderPos, maxSliderPos, style, slider);
+            return;
+        }
+        
+        juce::ignoreUnused (minSliderPos, maxSliderPos);
+        
+        // No track line for gain slider
+        
+        // Calculate knob size based on slider position (not value)
+        // sliderPos is already the absolute X position within the component
+        // We need to convert it to a normalized position (0.0 to 1.0)
+        float normalizedPosition = (sliderPos - x) / width;
+        normalizedPosition = juce::jlimit (0.0f, 1.0f, normalizedPosition);
+        
+        // Scale knob size: 20x20 at left (0.0), 40x40 at right (1.0)
+        float minKnobSize = 20.0f;
+        float maxKnobSize = 40.0f;
+        float knobSize = minKnobSize + (normalizedPosition * (maxKnobSize - minKnobSize));
+        
+        float trackY = y + height * 0.5f;
+        float knobX = sliderPos - knobSize * 0.5f;
+        float knobY = trackY - knobSize * 0.5f;
+        
+        // Draw knob with scaled size
+        juce::Image& imageToUse = slider.isMouseOverOrDragging() ? knobHoverImage : knobImage;
+        if (imageToUse.isValid())
+        {
+            g.drawImage (imageToUse, juce::Rectangle<float> (knobX, knobY, knobSize, knobSize),
+                        juce::RectanglePlacement::fillDestination);
+        }
+        else
+        {
+            // Fallback: draw a white circle if image isn't loaded
+            g.setColour (juce::Colours::white);
+            g.fillEllipse (knobX, knobY, knobSize, knobSize);
+        }
+    }
 };
 
 //==============================================================================
@@ -155,7 +208,6 @@ private:
     
     // Image buttons
     ToggleImageButton graphicsButton;
-    ToggleImageButton breakCpuButton;
     
     juce::Label audioFileLabel;
     juce::Label particleCountLabel;
@@ -196,10 +248,6 @@ private:
     juce::Image graphicsButtonUnpressedHover;
     juce::Image graphicsButtonPressed;
     juce::Image graphicsButtonPressedHover;
-    juce::Image breakCpuButtonUnpressed;
-    juce::Image breakCpuButtonUnpressedHover;
-    juce::Image breakCpuButtonPressed;
-    juce::Image breakCpuButtonPressedHover;
     
     // Custom font
     juce::Typeface::Ptr customTypeface;
@@ -210,7 +258,7 @@ private:
     CustomSliderLookAndFeel lifespanLookAndFeel;
     CustomSliderLookAndFeel grainSizeLookAndFeel;
     CustomSliderLookAndFeel grainFreqLookAndFeel;
-    CustomSliderLookAndFeel masterGainLookAndFeel;
+    GainSliderLookAndFeel masterGainLookAndFeel;
     
     // Slider value display tracking
     bool showingSliderValue = false;

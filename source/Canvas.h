@@ -57,9 +57,6 @@ public:
     // Set particle lifespan for newly spawned particles
     void setParticleLifespan (float lifespanSeconds) { particleLifespan = lifespanSeconds; }
     
-    // Set break CPU mode (unlimited particles/masses/spawn points)
-    void setBreakCpuMode (bool enabled);
-    
     // Set bounce mode (particles bounce off walls instead of wrapping)
     void setBounceMode (bool enabled);
     
@@ -73,7 +70,6 @@ private:
     // Reference to audio processor (owns the particle simulation)
     PluginProcessor& audioProcessor;
 
-    bool breakCpuMode = false;
     bool bounceMode = false;
     int maxSpawnPoints = 8;
     int maxMassPoints = 4;
