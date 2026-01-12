@@ -120,9 +120,13 @@ public:
         
         // No track line for gain slider
         
+        // Add padding to keep knob away from edges
+        float sidePadding = 10.0f; // 10px padding on each side
+        float usableWidth = width - (sidePadding * 2.0f);
+        float usableX = x + sidePadding;
+        
         // Calculate knob size based on slider position (not value)
-        // sliderPos is already the absolute X position within the component
-        // We need to convert it to a normalized position (0.0 to 1.0)
+        // Map sliderPos to the usable range with padding
         float normalizedPosition = (sliderPos - x) / width;
         normalizedPosition = juce::jlimit (0.0f, 1.0f, normalizedPosition);
         
@@ -131,8 +135,10 @@ public:
         float maxKnobSize = 40.0f;
         float knobSize = minKnobSize + (normalizedPosition * (maxKnobSize - minKnobSize));
         
+        // Position knob within the padded area
+        float paddedSliderPos = usableX + (normalizedPosition * usableWidth);
         float trackY = y + height * 0.5f;
-        float knobX = sliderPos - knobSize * 0.5f;
+        float knobX = paddedSliderPos - knobSize * 0.5f;
         float knobY = trackY - knobSize * 0.5f;
         
         // Draw knob with scaled size

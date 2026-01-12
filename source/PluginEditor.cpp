@@ -744,8 +744,8 @@ void PluginEditor::resized()
     
     // Row 3: Frequency (left), Master Gain (right) - moved down 5px, then up 2px = +3px
     grainFreqSlider.setBounds (leftColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
-    // Master Gain slider: positioned at (264, 750) with 200px length
-    masterGainSlider.setBounds (264, 750, 200, sliderHeight);
+    // Master Gain slider: positioned at (247, 749) with 234px length
+    masterGainSlider.setBounds (247, 749, 234, sliderHeight);
     
     // Image buttons below slider cases
     // Slider cases end at y=745 (560 + 185)
