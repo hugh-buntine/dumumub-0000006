@@ -188,6 +188,7 @@ private:
     juce::Image canvasBorderImage;
     juce::Image titleImage;
     juce::Image sliderCasesImage;
+    juce::Image sliderCasesCoverImage;
     juce::Image dropTextImage;
     
     // Button images

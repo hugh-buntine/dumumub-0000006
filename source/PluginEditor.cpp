@@ -16,6 +16,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                   BinaryData::TITLE_pngSize);
     sliderCasesImage = juce::ImageCache::getFromMemory (BinaryData::SLIDERCASES_png, 
                                                         BinaryData::SLIDERCASES_pngSize);
+    sliderCasesCoverImage = juce::ImageCache::getFromMemory (BinaryData::SLIDERCASESCOVER_png, 
+                                                              BinaryData::SLIDERCASESCOVER_pngSize);
     dropTextImage = juce::ImageCache::getFromMemory (BinaryData::DROPTEXT_png, 
                                                      BinaryData::DROPTEXT_pngSize);
     
@@ -355,6 +357,14 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
     {
         g.drawImage (sliderCasesImage, juce::Rectangle<float> (40.0f, 560.0f, 415.0f, 185.0f),
                     juce::RectanglePlacement::fillDestination);
+    }
+    
+    // Draw slider cases cover on top at (30, 556) with 440x194 size (centered, 30px from each side)
+    // Using stretchToFit instead of fillDestination to respect aspect ratio
+    if (sliderCasesCoverImage.isValid())
+    {
+        g.drawImage (sliderCasesCoverImage, juce::Rectangle<float> (10.0f, 556.0f, 480.0f, 192.0f),
+                    juce::RectanglePlacement::stretchToFit);
     }
     
     // Draw title at top (0, 0) with 500x118 size - on top of everything
