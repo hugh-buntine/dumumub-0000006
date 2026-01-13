@@ -794,8 +794,8 @@ void PluginEditor::drawGainVisualization (juce::Graphics& g)
     // Get current gain value in dB
     auto gainDB = masterGainSlider.getValue(); // -60dB to 0dB
     
-    // Convert dB to linear amplitude (0.0 to 1.0)
-    float amplitude = juce::Decibels::decibelsToGain(gainDB);
+    // Use linear scale based on dB value (0.0 at -60dB, 1.0 at 0dB)
+    float linearScale = (gainDB + 60.0f) / 60.0f; // Maps -60dB to 0.0, 0dB to 1.0
     
     // Use bottom two-thirds of canvas for drawing area (match ADSR curve exactly)
     auto canvasBounds = canvas.getBounds();
@@ -804,16 +804,18 @@ void PluginEditor::drawGainVisualization (juce::Graphics& g)
     float drawWidth = canvasBounds.getWidth();
     float drawHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
     
-    // Calculate rectangle height based on gain
-    float rectHeight = drawHeight * amplitude;
+    // Calculate rectangle height based on linear scale
+    float rectHeight = drawHeight * linearScale;
     float rectY = drawY + drawHeight - rectHeight; // Start from bottom
     
-    // Draw filled rectangle from bottom up (same style as ADSR curve)
-    g.setColour (juce::Colours::white.withAlpha (0.15f));
+    // Draw filled rectangle with gradient (match ADSR curve style)
+    auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
+    juce::ColourGradient gradient (colour.withAlpha(0.08f), drawX, rectY,
+                                   colour.withAlpha(0.02f), drawX, rectY + rectHeight, false);
+    g.setGradientFill (gradient);
     g.fillRect (drawX, rectY, drawWidth, rectHeight);
     
     // Draw outline of the filled area (match ADSR curve style)
-    auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
     g.setColour (colour.withAlpha (0.15f));
     g.drawRect (drawX, rectY, drawWidth, rectHeight, 1.5f);
     
