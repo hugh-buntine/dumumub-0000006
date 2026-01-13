@@ -42,11 +42,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     auto knob3 = juce::ImageCache::getFromMemory (BinaryData::KNOB3_png, BinaryData::KNOB3_pngSize);
     auto knob3Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB3HOVER_png, BinaryData::KNOB3HOVER_pngSize);
-    lifespanLookAndFeel.setKnobImages (knob3, knob3Hover);
+    decayLookAndFeel.setKnobImages (knob3, knob3Hover);
     
     auto knob4 = juce::ImageCache::getFromMemory (BinaryData::KNOB4_png, BinaryData::KNOB4_pngSize);
     auto knob4Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB4HOVER_png, BinaryData::KNOB4HOVER_pngSize);
-    grainSizeLookAndFeel.setKnobImages (knob4, knob4Hover);
+    sustainLookAndFeel.setKnobImages (knob4, knob4Hover);
     
     auto knob5 = juce::ImageCache::getFromMemory (BinaryData::KNOB5_png, BinaryData::KNOB5_pngSize);
     auto knob5Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB5HOVER_png, BinaryData::KNOB5HOVER_pngSize);
@@ -54,7 +54,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     auto knob6 = juce::ImageCache::getFromMemory (BinaryData::KNOB6_png, BinaryData::KNOB6_pngSize);
     auto knob6Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB6HOVER_png, BinaryData::KNOB6HOVER_pngSize);
-    masterGainLookAndFeel.setKnobImages (knob6, knob6Hover);
+    grainSizeLookAndFeel.setKnobImages (knob6, knob6Hover);
+    
+    auto gainKnob = juce::ImageCache::getFromMemory (BinaryData::GAINKNOB_png, BinaryData::GAINKNOB_pngSize);
+    auto gainKnobHover = juce::ImageCache::getFromMemory (BinaryData::GAINKNOBHOVER_png, BinaryData::GAINKNOBHOVER_pngSize);
+    masterGainLookAndFeel.setKnobImages (gainKnob, gainKnobHover);
     
     // Load button images
     graphicsButtonUnpressed = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONUNPRESSED_png, 
@@ -196,19 +200,35 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Lifespan (now Sustain Level)
-    addAndMakeVisible (lifespanSlider);
-    lifespanSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    lifespanSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    lifespanSlider.setLookAndFeel (&lifespanLookAndFeel);
-    lifespanAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        apvts, "sustain", lifespanSlider);
+    // Decay
+    addAndMakeVisible (decaySlider);
+    decaySlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    decaySlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    decaySlider.setLookAndFeel (&decayLookAndFeel);
+    decayAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, "decay", decaySlider);
+    decaySlider.onValueChange = [this]() { decaySlider.repaint(); };
+    decaySlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
+        activeSliderName = "DECAY";
+        activeSliderValue = value;
+        repaint();
+    };
+    
+    // Sustain Level
+    addAndMakeVisible (sustainSlider);
+    sustainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    sustainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    sustainSlider.setLookAndFeel (&sustainLookAndFeel);
+    sustainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, "sustain", sustainSlider);
     
     // Update display when parameter changes
-    lifespanSlider.onValueChange = [this]() {
-        lifespanSlider.repaint();
+    sustainSlider.onValueChange = [this]() {
+        sustainSlider.repaint();
     };
-    lifespanSlider.onDragStateChanged = [this](bool isDragging, double value) {
+    sustainSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
         showingADSRCurve = isDragging;
         activeSliderName = "SUSTAIN";
@@ -278,7 +298,8 @@ PluginEditor::~PluginEditor()
     // Reset LookAndFeel before sliders are destroyed
     attackSlider.setLookAndFeel (nullptr);
     releaseSlider.setLookAndFeel (nullptr);
-    lifespanSlider.setLookAndFeel (nullptr);
+    decaySlider.setLookAndFeel (nullptr);
+    sustainSlider.setLookAndFeel (nullptr);
     grainSizeSlider.setLookAndFeel (nullptr);
     grainFreqSlider.setLookAndFeel (nullptr);
     masterGainSlider.setLookAndFeel (nullptr);
@@ -468,9 +489,9 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
 {
     // Get current ADSR parameter values
     auto attack = attackSlider.getValue();
-    auto sustainLinear = lifespanSlider.getValue(); // Linear 0.0-1.0 from parameter
+    auto decay = decaySlider.getValue();
+    auto sustainLinear = sustainSlider.getValue(); // Linear 0.0-1.0 from parameter
     auto release = releaseSlider.getValue();
-    constexpr float decay = 0.2f; // Fixed decay time
     
     // Use LINEAR sustain value for visual display (matches slider position intuitively)
     // Audio uses logarithmic conversion, but visual should show what the slider shows
@@ -738,13 +759,15 @@ void PluginEditor::resized()
     attackSlider.setBounds (leftColumnX, startY - 7, sliderWidth, sliderHeight);
     releaseSlider.setBounds (rightColumnX, startY - 7, sliderWidth, sliderHeight);
     
-    // Row 2: Lifespan (left), Grain Size (right) - moved up 1px
-    lifespanSlider.setBounds (leftColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
-    grainSizeSlider.setBounds (rightColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
+    // Row 2: Decay (left), Sustain (right) - moved up 1px
+    decaySlider.setBounds (leftColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
+    sustainSlider.setBounds (rightColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
     
-    // Row 3: Frequency (left), Master Gain (right) - moved down 5px, then up 2px = +3px
+    // Row 3: Grain Frequency (left), Grain Size (right) - moved down 5px, then up 2px = +3px
     grainFreqSlider.setBounds (leftColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
-    // Master Gain slider: positioned at (247, 749) with 234px length
+    grainSizeSlider.setBounds (rightColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
+    
+    // Row 4: Master Gain (bottom right) - positioned at (247, 749) with 234px length
     masterGainSlider.setBounds (247, 749, 234, sliderHeight);
     
     // Image buttons below slider cases

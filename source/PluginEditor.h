@@ -227,8 +227,10 @@ private:
     juce::Label attackLabel;
     SliderWithTooltip releaseSlider;
     juce::Label releaseLabel;
-    SliderWithTooltip lifespanSlider;
-    juce::Label lifespanLabel;
+    SliderWithTooltip decaySlider;
+    juce::Label decayLabel;
+    SliderWithTooltip sustainSlider;
+    juce::Label sustainLabel;
     SliderWithTooltip masterGainSlider;
     juce::Label masterGainLabel;
     
@@ -237,7 +239,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> grainFreqAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> releaseAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lifespanAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> decayAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sustainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterGainAttachment;
     
     // Background images
@@ -261,7 +264,8 @@ private:
     // Custom LookAndFeel for each slider
     CustomSliderLookAndFeel attackLookAndFeel;
     CustomSliderLookAndFeel releaseLookAndFeel;
-    CustomSliderLookAndFeel lifespanLookAndFeel;
+    CustomSliderLookAndFeel decayLookAndFeel;
+    CustomSliderLookAndFeel sustainLookAndFeel;
     CustomSliderLookAndFeel grainSizeLookAndFeel;
     CustomSliderLookAndFeel grainFreqLookAndFeel;
     GainSliderLookAndFeel masterGainLookAndFeel;

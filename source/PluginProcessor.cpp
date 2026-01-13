@@ -117,6 +117,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         }
     ));
     
+    // Decay Time (0.01s - 5.0s) - Controls particle ADSR decay
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        "decay",
+        "Decay",
+        juce::NormalisableRange<float> (0.01f, 5.0f, 0.001f, 0.3f),
+        0.3f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { 
+            if (value >= 0.1f)
+                return juce::String (value, 2) + " s";
+            else
+                return juce::String (value * 1000.0f, 0) + " ms";
+        }
+    ));
+    
     // Sustain Level (0.0 - 1.0) - Controls envelope sustain amplitude
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "sustain",
