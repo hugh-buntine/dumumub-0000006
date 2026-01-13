@@ -278,6 +278,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     masterGainSlider.onValueChange = [this]() { masterGainSlider.repaint(); };
     masterGainSlider.onDragStateChanged = [this](bool isDragging, double value) {
         showingSliderValue = isDragging;
+        showingGainVisualization = isDragging;
         activeSliderName = "MASTER GAIN";
         activeSliderValue = value;
         repaint();
@@ -483,6 +484,10 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
     // Draw multiple waveforms when Grain Frequency slider is being dragged
     if (showingGrainFreqWaveforms)
         drawGrainSizeWaveform (g); // Reuse the same waveform drawing, but draw it multiple times
+    
+    // Draw gain visualization when Master Gain slider is being dragged
+    if (showingGainVisualization)
+        drawGainVisualization (g);
 }
 
 void PluginEditor::drawADSRCurve (juce::Graphics& g)
@@ -782,4 +787,41 @@ void PluginEditor::resized()
     int startX = sliderCasesX + (415 - totalWidth) / 2;
     
     graphicsButton.setBounds (startX, buttonY, buttonWidth, buttonHeight);
+}
+
+void PluginEditor::drawGainVisualization (juce::Graphics& g)
+{
+    // Get current gain value in dB
+    auto gainDB = masterGainSlider.getValue(); // -60dB to 0dB
+    
+    // Convert dB to linear amplitude (0.0 to 1.0)
+    float amplitude = juce::Decibels::decibelsToGain(gainDB);
+    
+    // Use bottom two-thirds of canvas for drawing area (match ADSR curve exactly)
+    auto canvasBounds = canvas.getBounds();
+    float drawX = canvasBounds.getX();
+    float drawY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f); // Start 1/3 down
+    float drawWidth = canvasBounds.getWidth();
+    float drawHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
+    
+    // Calculate rectangle height based on gain
+    float rectHeight = drawHeight * amplitude;
+    float rectY = drawY + drawHeight - rectHeight; // Start from bottom
+    
+    // Draw filled rectangle from bottom up (same style as ADSR curve)
+    g.setColour (juce::Colours::white.withAlpha (0.15f));
+    g.fillRect (drawX, rectY, drawWidth, rectHeight);
+    
+    // Draw outline of the filled area (match ADSR curve style)
+    auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
+    g.setColour (colour.withAlpha (0.15f));
+    g.drawRect (drawX, rectY, drawWidth, rectHeight, 1.5f);
+    
+    // Draw gain value text at top
+    g.setColour (juce::Colours::white);
+    g.setFont (24.0f);
+    juce::String gainText = juce::String(gainDB, 1) + " dB";
+    auto textBounds = g.getCurrentFont().getStringWidth(gainText);
+    g.drawText (gainText, drawX + (drawWidth - textBounds) / 2, drawY + 10, textBounds, 30,
+               juce::Justification::centred);
 }

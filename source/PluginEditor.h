@@ -232,6 +232,7 @@ public:
     void paintOverChildren (juce::Graphics& g) override;
     void drawADSRCurve (juce::Graphics& g);
     void drawGrainSizeWaveform (juce::Graphics& g);
+    void drawGainVisualization (juce::Graphics& g);
 
 private:
     // This reference is provided as a quick way for your editor to
@@ -311,6 +312,9 @@ private:
     
     // Grain frequency waveform display tracking
     bool showingGrainFreqWaveforms = false;
+    
+    // Gain level visualization tracking
+    bool showingGainVisualization = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
