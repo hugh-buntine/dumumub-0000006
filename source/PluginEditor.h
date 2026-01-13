@@ -79,7 +79,7 @@ public:
     {
         juce::ignoreUnused (minSliderPos, maxSliderPos, style, x, width);
         
-        // Draw the knob image (no track line)
+        // Draw the knob image (no track line) with rotation
         auto& imageToUse = slider.isMouseOverOrDragging() ? knobHoverImage : knobImage;
         if (imageToUse.isValid())
         {
@@ -87,6 +87,21 @@ public:
             auto knobHeight = 40.0f;
             auto knobX = sliderPos - knobWidth * 0.5f;
             auto knobY = y + (height - knobHeight) * 0.5f;
+            
+            // Calculate rotation based on slider value (0.0 to 1.0)
+            // Rotate from -135° to +135° (270° total range like a typical rotary knob)
+            auto value = slider.getValue();
+            auto range = slider.getRange();
+            auto normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
+            float rotationRadians = -2.356f + (normalizedValue * 4.712f); // -135° to +135° in radians
+            
+            // Draw rotated knob
+            juce::Graphics::ScopedSaveState savedState (g);
+            auto centerX = knobX + knobWidth * 0.5f;
+            auto centerY = knobY + knobHeight * 0.5f;
+            
+            juce::AffineTransform transform = juce::AffineTransform::rotation (rotationRadians, centerX, centerY);
+            g.addTransform (transform);
             
             g.drawImage (imageToUse, juce::Rectangle<float> (knobX, knobY, knobWidth, knobHeight),
                         juce::RectanglePlacement::fillDestination);
@@ -141,10 +156,23 @@ public:
         float knobX = paddedSliderPos - knobSize * 0.5f;
         float knobY = trackY - knobSize * 0.5f;
         
-        // Draw knob with scaled size
+        // Calculate rotation based on slider value
+        auto value = slider.getValue();
+        auto range = slider.getRange();
+        auto normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
+        float rotationRadians = -2.356f + (normalizedValue * 4.712f); // -135° to +135° in radians
+        
+        // Draw knob with scaled size and rotation
         juce::Image& imageToUse = slider.isMouseOverOrDragging() ? knobHoverImage : knobImage;
         if (imageToUse.isValid())
         {
+            juce::Graphics::ScopedSaveState savedState (g);
+            auto centerX = knobX + knobSize * 0.5f;
+            auto centerY = knobY + knobSize * 0.5f;
+            
+            juce::AffineTransform transform = juce::AffineTransform::rotation (rotationRadians, centerX, centerY);
+            g.addTransform (transform);
+            
             g.drawImage (imageToUse, juce::Rectangle<float> (knobX, knobY, knobSize, knobSize),
                         juce::RectanglePlacement::fillDestination);
         }
