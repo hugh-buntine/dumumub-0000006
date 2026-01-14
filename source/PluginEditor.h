@@ -147,7 +147,7 @@ protected:
 };
 
 //==============================================================================
-// Custom LookAndFeel for gain slider with scaling knob
+// Custom LookAndFeel for gain slider with scaling knob and -infinity behavior
 class GainSliderLookAndFeel : public CustomSliderLookAndFeel
 {
 public:
@@ -173,10 +173,23 @@ public:
         float usableWidth = width - (sidePadding * 2.0f);
         float usableX = x + sidePadding;
         
-        // Calculate knob size based on slider position (not value)
-        // Map sliderPos to the usable range with padding
-        float normalizedPosition = (sliderPos - x) / width;
-        normalizedPosition = juce::jlimit (0.0f, 1.0f, normalizedPosition);
+        // Custom position calculation for -infinity behavior
+        // Reserve leftmost ~3 pixels for -infinity zone
+        auto value = slider.getValue();
+        auto range = slider.getRange();
+        
+        float normalizedPosition;
+        if (value <= range.getStart()) // -60dB represents -infinity
+        {
+            normalizedPosition = 0.0f; // Leftmost position for -infinity
+        }
+        else
+        {
+            // Map -60dB to +6dB linearly, but start from a few pixels right of the left edge
+            double normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
+            float minUsablePosition = 3.0f / width; // ~3 pixels from left edge
+            normalizedPosition = minUsablePosition + (normalizedValue * (1.0f - minUsablePosition));
+        }
         
         // Scale knob size: 20x20 at left (0.0), 40x40 at right (1.0)
         float minKnobSize = 20.0f;
@@ -189,10 +202,17 @@ public:
         float knobX = paddedSliderPos - knobSize * 0.5f;
         float knobY = trackY - knobSize * 0.5f;
         
-        // Calculate rotation based on slider value
-        auto value = slider.getValue();
-        auto range = slider.getRange();
-        auto normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
+        // Calculate rotation based on slider value with -infinity consideration
+        float normalizedValue;
+        if (value <= range.getStart())
+        {
+            normalizedValue = 0.0f; // -infinity position (leftmost rotation)
+        }
+        else
+        {
+            normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
+        }
+        
         float rotationRadians = -2.356f + (normalizedValue * 4.712f); // -135° to +135° in radians
         
         // Draw knob with scaled size and rotation
@@ -215,6 +235,68 @@ public:
             g.setColour (juce::Colours::white);
             g.fillEllipse (knobX, knobY, knobSize, knobSize);
         }
+    }
+};
+
+//==============================================================================
+// Custom Gain Slider with -infinity behavior
+class GainSlider : public juce::Slider
+{
+public:
+    GainSlider() = default;
+    
+    std::function<void(bool, double)> onDragStateChanged;
+    
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseDown (e);
+        if (onDragStateChanged)
+            onDragStateChanged (true, getValue());
+    }
+    
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseDrag (e);
+        if (onDragStateChanged)
+            onDragStateChanged (true, getValue());
+    }
+    
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseUp (e);
+        if (onDragStateChanged)
+            onDragStateChanged (false, getValue());
+    }
+    
+    double proportionOfLengthToValue (double proportion) override
+    {
+        auto range = getRange();
+        
+        // If at leftmost position (first ~3 pixels), return minimum value for -infinity display
+        float minUsablePosition = 3.0f / getWidth();
+        if (proportion <= minUsablePosition)
+        {
+            return range.getStart(); // -60dB which triggers -infinity display
+        }
+        
+        // Map the rest of the slider range linearly
+        double adjustedProportion = (proportion - minUsablePosition) / (1.0 - minUsablePosition);
+        return range.getStart() + (adjustedProportion * range.getLength());
+    }
+    
+    double valueToProportionOfLength (double value) override
+    {
+        auto range = getRange();
+        
+        if (value <= range.getStart()) // -60dB represents -infinity
+        {
+            return 0.0; // Leftmost position for -infinity
+        }
+        
+        // Map -60dB to +6dB linearly, but start from a few pixels right of the left edge
+        double normalizedValue = (value - range.getStart()) / range.getLength();
+        float minUsablePosition = 3.0f / getWidth();
+        return minUsablePosition + (normalizedValue * (1.0 - minUsablePosition));
     }
 };
 
@@ -293,7 +375,7 @@ private:
     juce::Label decayLabel;
     SliderWithTooltip sustainSlider;
     juce::Label sustainLabel;
-    SliderWithTooltip masterGainSlider;
+    GainSlider masterGainSlider;
     juce::Label masterGainLabel;
     
     // Attachments

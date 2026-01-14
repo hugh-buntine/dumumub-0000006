@@ -144,15 +144,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         [](float value, int) { return juce::String (static_cast<int>(value * 100.0f)) + " %"; }
     ));
     
-    // Master Gain (-60dB - 0dB)
+    // Master Gain (-60dB - +6dB with special -infinity at leftmost position)
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         "masterGain",
         "Master Gain",
-        juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f),
+        juce::NormalisableRange<float> (-60.0f, 6.0f, 0.1f),
         -6.0f,
         juce::String(),
         juce::AudioProcessorParameter::genericParameter,
-        [](float value, int) { return juce::String (value, 1) + " dB"; }
+        [](float value, int) { 
+            if (value <= -60.0f) 
+                return juce::String ("-∞");
+            else 
+                return juce::String (value, 1) + " dB"; 
+        }
     ));
     
     // Logging Toggle (boolean parameter)
@@ -707,7 +712,17 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     float grainSizeMs = apvts.getRawParameterValue("grainSize")->load();
     float grainFreq = apvts.getRawParameterValue("grainFreq")->load();
     float masterGainDb = apvts.getRawParameterValue("masterGain")->load();
-    float masterGainLinear = juce::Decibels::decibelsToGain(masterGainDb);
+    
+    // Handle -infinity case: if gain is at -60dB (leftmost position), treat as mute
+    float masterGainLinear;
+    if (masterGainDb <= -60.0f)
+    {
+        masterGainLinear = 0.0f; // Complete silence for -infinity
+    }
+    else
+    {
+        masterGainLinear = juce::Decibels::decibelsToGain(masterGainDb);
+    }
     
     // Note: attack and release are now ADSR parameters, not grain envelope parameters
     // Grain crossfade is hardcoded to 50% in Particle::getGrainAmplitude()
