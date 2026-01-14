@@ -355,7 +355,7 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                                             juce::String(mousePos.y, 2) + ")");
                                    
                                    // Add mass point to processor first
-                                   audioProcessor.addMassPoint (mousePos, 4.0f); // Default to largest mass
+                                   audioProcessor.addMassPoint (mousePos, 2.0f); // Default to medium mass
                                    
                                    // Create GUI component to match
                                    auto* mass = new MassPoint();

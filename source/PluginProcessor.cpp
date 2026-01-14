@@ -460,7 +460,7 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     if (massPoints.size() == 0)
     {
         LOG_INFO("No mass points found - creating default mass point at center");
-        massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 4.0f });
+        massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 2.0f });
     }
     
     // Get ADSR parameters
