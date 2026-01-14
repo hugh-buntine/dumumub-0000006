@@ -9,6 +9,39 @@
 #include "Logger.h"
 
 //==============================================================================
+// Simple image component for displaying images as components
+class ImageComponent : public juce::Component
+{
+public:
+    ImageComponent() = default;
+    
+    void setImage(const juce::Image& image)
+    {
+        img = image;
+        repaint();
+    }
+    
+    void paint(juce::Graphics& g) override
+    {
+        if (img.isValid())
+        {
+            g.drawImage(img, getLocalBounds().toFloat(), 
+                       juce::RectanglePlacement::fillDestination);
+        }
+    }
+    
+    // Make component click-through - mouse events pass to components underneath
+    bool hitTest(int x, int y) override
+    {
+        juce::ignoreUnused(x, y);
+        return false; // Never consume mouse events
+    }
+    
+private:
+    juce::Image img;
+};
+
+//==============================================================================
 // Custom toggle button with 4 image states
 class ToggleImageButton : public juce::Button
 {
@@ -280,6 +313,12 @@ private:
     juce::Image sliderCasesImage;
     juce::Image sliderCasesCoverImage;
     juce::Image dropTextImage;
+    
+    // Image components for setAlwaysOnTop functionality
+    std::unique_ptr<ImageComponent> canvasBorderComponent;
+    std::unique_ptr<ImageComponent> sliderCasesComponent;
+    std::unique_ptr<ImageComponent> sliderCasesCoverComponent;
+    std::unique_ptr<ImageComponent> titleComponent;
     
     // Button images
     juce::Image graphicsButtonUnpressed;

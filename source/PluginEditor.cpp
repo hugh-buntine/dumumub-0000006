@@ -122,6 +122,35 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                               BinaryData::VORTEX4HOVER_pngSize);
     MassPoint::setVortexHoverImages (vortexImage1Hover, vortexImage2Hover, vortexImage3Hover, vortexImage4Hover);
 
+    // Create image components for setAlwaysOnTop functionality
+    // Canvas Border Component
+    canvasBorderComponent = std::make_unique<ImageComponent>();
+    canvasBorderComponent->setImage(canvasBorderImage);
+    addAndMakeVisible(*canvasBorderComponent);
+    canvasBorderComponent->setBounds(0, 70, 500, 500);
+    canvasBorderComponent->setAlwaysOnTop(true);
+    
+    // Slider Cases Component
+    sliderCasesComponent = std::make_unique<ImageComponent>();
+    sliderCasesComponent->setImage(sliderCasesImage);
+    addAndMakeVisible(*sliderCasesComponent);
+    sliderCasesComponent->setBounds(40, 560, 415, 185);
+    sliderCasesComponent->setAlwaysOnTop(true);
+    
+    // Slider Cases Cover Component
+    sliderCasesCoverComponent = std::make_unique<ImageComponent>();
+    sliderCasesCoverComponent->setImage(sliderCasesCoverImage);
+    addAndMakeVisible(*sliderCasesCoverComponent);
+    sliderCasesCoverComponent->setBounds(10, 556, 480, 192);
+    sliderCasesCoverComponent->setAlwaysOnTop(true);
+    
+    // Title Component
+    titleComponent = std::make_unique<ImageComponent>();
+    titleComponent->setImage(titleImage);
+    addAndMakeVisible(*titleComponent);
+    titleComponent->setBounds(0, 0, 500, 118);
+    titleComponent->setAlwaysOnTop(true);
+
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
     setSize (500, 800);
@@ -343,38 +372,56 @@ void PluginEditor::paint (juce::Graphics& g)
         g.drawImage (canvasBackgroundImage, juce::Rectangle<float> (25.0f, 100.0f, 450.0f, 450.0f),
                     juce::RectanglePlacement::fillDestination);
     }
+    
+    // Draw slider visualizations (behind components, so they appear under canvas border)
+    
+    // Draw slider value in center of canvas when dragging
+    if (showingSliderValue && customTypeface != nullptr)
+    {
+        // Format value based on range
+        juce::String valueText;
+        if (activeSliderValue >= 100.0)
+            valueText = juce::String (static_cast<int>(activeSliderValue));
+        else if (activeSliderValue >= 10.0)
+            valueText = juce::String (activeSliderValue, 1);
+        else
+            valueText = juce::String (activeSliderValue, 2);
+        
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.4f)); // Slightly more opaque than particle count
+        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (80.0f)); // Way bigger font
+        g.setFont (font);
+        
+        // Draw in center of canvas
+        auto canvasBounds = canvas.getBounds();
+        auto centerX = canvasBounds.getCentreX();
+        auto centerY = canvasBounds.getCentreY();
+        
+        g.drawText (valueText, 
+                   juce::Rectangle<float>(centerX - 200.0f, centerY - 40.0f, 400.0f, 80.0f), 
+                   juce::Justification::centred, true);
+    }
+    
+    // Draw ADSR curve only when Attack, Release, or Sustain sliders are being dragged
+    if (showingADSRCurve)
+        drawADSRCurve (g);
+    
+    // Draw grain size waveform when Grain Size slider is being dragged
+    if (showingGrainSizeWaveform)
+        drawGrainSizeWaveform (g);
+    
+    // Draw multiple waveforms when Grain Frequency slider is being dragged
+    if (showingGrainFreqWaveforms)
+        drawGrainSizeWaveform (g); // Reuse the same waveform drawing, but draw it multiple times
+    
+    // Draw gain visualization when Master Gain slider is being dragged
+    if (showingGainVisualization)
+        drawGainVisualization (g);
 }
 
 void PluginEditor::paintOverChildren (juce::Graphics& g)
 {
-    // Draw canvas border on top of everything at (0, 70) with 500x500 size
-    if (canvasBorderImage.isValid())
-    {
-        g.drawImage (canvasBorderImage, juce::Rectangle<float> (0.0f, 70.0f, 500.0f, 500.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
-    
-    // Draw slider cases on top of sliders at (40, 560) with 415x185 size
-    if (sliderCasesImage.isValid())
-    {
-        g.drawImage (sliderCasesImage, juce::Rectangle<float> (40.0f, 560.0f, 415.0f, 185.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
-    
-    // Draw slider cases cover on top at (30, 556) with 440x194 size (centered, 30px from each side)
-    // Using stretchToFit instead of fillDestination to respect aspect ratio
-    if (sliderCasesCoverImage.isValid())
-    {
-        g.drawImage (sliderCasesCoverImage, juce::Rectangle<float> (10.0f, 556.0f, 480.0f, 192.0f),
-                    juce::RectanglePlacement::stretchToFit);
-    }
-    
-    // Draw title at top (0, 0) with 500x118 size - on top of everything
-    if (titleImage.isValid())
-    {
-        g.drawImage (titleImage, juce::Rectangle<float> (0.0f, 0.0f, 500.0f, 118.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
+    // NOTE: Canvas border, slider cases, slider cases cover, and title are now 
+    // drawn by their respective components with setAlwaysOnTop(true) instead of here
     
     // Draw drop-text image or filename at top of canvas
     auto labelBounds = audioFileLabel.getBounds();
@@ -446,48 +493,6 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
         g.drawText (text, juce::Rectangle<float>(textX, textY, textWidth, 20.0f), 
                    juce::Justification::centredRight, true);
     }
-    
-    // Draw slider value in center of canvas when dragging
-    if (showingSliderValue && customTypeface != nullptr)
-    {
-        // Format value based on range
-        juce::String valueText;
-        if (activeSliderValue >= 100.0)
-            valueText = juce::String (static_cast<int>(activeSliderValue));
-        else if (activeSliderValue >= 10.0)
-            valueText = juce::String (activeSliderValue, 1);
-        else
-            valueText = juce::String (activeSliderValue, 2);
-        
-        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.4f)); // Slightly more opaque than particle count
-        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (80.0f)); // Way bigger font
-        g.setFont (font);
-        
-        // Draw in center of canvas
-        auto canvasBounds = canvas.getBounds();
-        auto centerX = canvasBounds.getCentreX();
-        auto centerY = canvasBounds.getCentreY();
-        
-        g.drawText (valueText, 
-                   juce::Rectangle<float>(centerX - 200.0f, centerY - 40.0f, 400.0f, 80.0f), 
-                   juce::Justification::centred, true);
-    }
-    
-    // Draw ADSR curve only when Attack, Release, or Sustain sliders are being dragged
-    if (showingADSRCurve)
-        drawADSRCurve (g);
-    
-    // Draw grain size waveform when Grain Size slider is being dragged
-    if (showingGrainSizeWaveform)
-        drawGrainSizeWaveform (g);
-    
-    // Draw multiple waveforms when Grain Frequency slider is being dragged
-    if (showingGrainFreqWaveforms)
-        drawGrainSizeWaveform (g); // Reuse the same waveform drawing, but draw it multiple times
-    
-    // Draw gain visualization when Master Gain slider is being dragged
-    if (showingGainVisualization)
-        drawGainVisualization (g);
 }
 
 void PluginEditor::drawADSRCurve (juce::Graphics& g)
