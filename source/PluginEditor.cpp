@@ -161,6 +161,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Give processor reference to canvas for audio rendering
     processorRef.setCanvas (&canvas);
     
+    // Pass custom typeface to canvas for drop text display
+    canvas.setCustomTypeface (customTypeface);
+    
     // Setup audio file loading callback
     canvas.onAudioFileLoaded = [this](const juce::File& file) {
         processorRef.loadAudioFile (file);

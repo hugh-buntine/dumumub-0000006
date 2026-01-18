@@ -60,6 +60,9 @@ public:
     // Set bounce mode (particles bounce off walls instead of wrapping)
     void setBounceMode (bool enabled);
     
+    // Set custom typeface for drop text display
+    void setCustomTypeface (juce::Typeface::Ptr typeface) { customTypeface = typeface; }
+    
     // Access to particles - now deprecated, particles live in processor
     // These are kept for backward compatibility during transition
     juce::OwnedArray<Particle>* getParticles();
@@ -103,6 +106,9 @@ private:
     
     // Custom popup menu look and feel
     CustomPopupMenuLookAndFeel popupMenuLookAndFeel;
+    
+    // Custom typeface for drop text display
+    juce::Typeface::Ptr customTypeface;
     
     // Thread safety removed - particles lock now lives in processor
 

@@ -64,11 +64,17 @@ void Canvas::paint (juce::Graphics& g)
     // Make canvas transparent so the background image shows through
     // (Don't fill with any color)
     
-    // Draw green border if dragging valid audio file
-    if (isDraggingFile)
+    // Show "drop" text if dragging valid audio file
+    if (isDraggingFile && customTypeface != nullptr)
     {
-        g.setColour (juce::Colours::green);
-        g.drawRect (getLocalBounds(), 3);
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.4f)); // Same style as slider values
+        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (80.0f)); // Same size as slider values
+        g.setFont (font);
+        
+        // Draw "drop" text in center of canvas
+        g.drawText ("drop", 
+                   juce::Rectangle<float>(0.0f, 0.0f, (float)getWidth(), (float)getHeight()), 
+                   juce::Justification::centred, true);
     }
     
     // Draw gravity waves first (behind everything)
