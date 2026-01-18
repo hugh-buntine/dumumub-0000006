@@ -534,7 +534,7 @@ void PluginProcessor::handleNoteOff (int noteNumber)
 //==============================================================================
 // Particle simulation update
 
-void PluginProcessor::updateParticleSimulation (double currentTime, int bufferSize)
+void PluginProcessor::updateParticleSimulation (double currentTime, int /*bufferSize*/)
 {
     // Calculate time since last update
     if (lastUpdateTime == 0.0)
@@ -652,7 +652,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                               juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
     // Clear all output channels

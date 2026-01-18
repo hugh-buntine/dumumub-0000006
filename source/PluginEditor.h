@@ -126,7 +126,7 @@ public:
             auto value = slider.getValue();
             auto range = slider.getRange();
             auto normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
-            float rotationRadians = -2.356f + (normalizedValue * 4.712f); // -135° to +135° in radians
+            float rotationRadians = -2.356f + (static_cast<float>(normalizedValue) * 4.712f); // -135° to +135° in radians
             
             // Draw rotated knob
             juce::Graphics::ScopedSaveState savedState (g);
@@ -188,7 +188,7 @@ public:
             // Map -60dB to +6dB linearly, but start from a few pixels right of the left edge
             double normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
             float minUsablePosition = 3.0f / width; // ~3 pixels from left edge
-            normalizedPosition = minUsablePosition + (normalizedValue * (1.0f - minUsablePosition));
+            normalizedPosition = minUsablePosition + (static_cast<float>(normalizedValue) * (1.0f - minUsablePosition));
         }
         
         // Scale knob size: 20x20 at left (0.0), 40x40 at right (1.0)
@@ -210,7 +210,7 @@ public:
         }
         else
         {
-            normalizedValue = (value - range.getStart()) / (range.getEnd() - range.getStart());
+            normalizedValue = static_cast<float>((value - range.getStart()) / (range.getEnd() - range.getStart()));
         }
         
         float rotationRadians = -2.356f + (normalizedValue * 4.712f); // -135° to +135° in radians

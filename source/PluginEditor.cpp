@@ -458,7 +458,9 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
             
             // Calculate letter spacing to spread text across 340px
             auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (12.0f));
-            auto naturalWidth = font.getStringWidthFloat (text);
+            juce::GlyphArrangement glyphs;
+            glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+            auto naturalWidth = glyphs.getBoundingBox (0, -1, true).getWidth();
             auto targetWidth = 340.0f;
             auto extraSpaceNeeded = targetWidth - naturalWidth;
             auto letterSpacing = (text.length() > 1) ? extraSpaceNeeded / (text.length() - 1) : 0.0f;
@@ -489,7 +491,9 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
         
         // Position text in bottom right corner of canvas with more padding (further up and more left)
         auto canvasBounds = canvas.getBounds(); // Get canvas bounds
-        auto textWidth = font.getStringWidthFloat (text);
+        juce::GlyphArrangement textGlyphs;
+        textGlyphs.addLineOfText (font, text, 0.0f, 0.0f);
+        auto textWidth = textGlyphs.getBoundingBox (0, -1, true).getWidth();
         auto textX = canvasBounds.getRight() - textWidth - 20.0f; // 20px padding from right (was 10px)
         auto textY = canvasBounds.getBottom() - 40.0f; // 40px from bottom (higher than before)
         
@@ -508,7 +512,7 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     
     // Use LINEAR sustain value for visual display (matches slider position intuitively)
     // Audio uses logarithmic conversion, but visual should show what the slider shows
-    float sustain = sustainLinear;
+    float sustain = static_cast<float>(sustainLinear);
     
     // Use bottom two-thirds of canvas for drawing area
     auto canvasBounds = canvas.getBounds();
@@ -518,7 +522,7 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     float curveHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
     
     // Calculate time scaling
-    float totalTime = attack + decay + 0.5f + release; // +0.5s for sustain display
+    float totalTime = static_cast<float>(attack + decay + 0.5f + release); // +0.5s for sustain display
     float timeScale = curveWidth / totalTime;
     
     // Build the path for ADSR curve
@@ -535,26 +539,26 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
     {
         float t = i / static_cast<float>(attackSteps);
         float normalized = t * t; // Exponential attack
-        float x = startX + (t * attack * timeScale);
+        float x = startX + (t * static_cast<float>(attack) * timeScale);
         float y = baseY - (normalized * curveHeight);
         adsrPath.lineTo (x, y);
     }
     
     // Decay phase - inverse exponential curve down to sustain level
-    float decayStartX = startX + (attack * timeScale);
+    float decayStartX = startX + (static_cast<float>(attack) * timeScale);
     int decaySteps = 15;
     for (int i = 1; i <= decaySteps; ++i)
     {
         float t = i / static_cast<float>(decaySteps);
         float invExp = 1.0f - std::pow (1.0f - t, 3.0f); // Inverse exponential
         float level = 1.0f - (invExp * (1.0f - sustain)); // From 1.0 down to sustain
-        float x = decayStartX + (t * decay * timeScale);
+        float x = decayStartX + (t * static_cast<float>(decay) * timeScale);
         float y = baseY - (level * curveHeight);
         adsrPath.lineTo (x, y);
     }
     
     // Sustain phase - flat line at sustain level
-    float sustainStartX = decayStartX + (decay * timeScale);
+    float sustainStartX = decayStartX + (static_cast<float>(decay) * timeScale);
     float sustainEndX = sustainStartX + (0.5f * timeScale);
     float sustainY = baseY - (sustain * curveHeight);
     adsrPath.lineTo (sustainEndX, sustainY);
@@ -566,13 +570,13 @@ void PluginEditor::drawADSRCurve (juce::Graphics& g)
         float t = i / static_cast<float>(releaseSteps);
         float invExp = 1.0f - std::pow (1.0f - t, 4.0f); // Inverse exponential (fast at first, slower at end)
         float level = sustain - (invExp * sustain); // From sustain down to 0
-        float x = sustainEndX + (t * release * timeScale);
+        float x = sustainEndX + (t * static_cast<float>(release) * timeScale);
         float y = baseY - (level * curveHeight);
         adsrPath.lineTo (x, y);
     }
     
     // Close the path by connecting to baseline and back to start
-    float endX = sustainEndX + (release * timeScale);
+    float endX = sustainEndX + (static_cast<float>(release) * timeScale);
     adsrPath.lineTo (endX, baseY); // Down to baseline at end
     adsrPath.lineTo (startX, baseY); // Back to start along baseline
     adsrPath.closeSubPath();
@@ -608,7 +612,7 @@ void PluginEditor::drawGrainSizeWaveform (juce::Graphics& g)
     if (showingGrainFreqWaveforms)
     {
         // Frequency visualization with circles
-        float frequency = grainFreqSlider.getValue();
+        float frequency = static_cast<float>(grainFreqSlider.getValue());
         
         // Get whole and fractional parts
         int wholeCircles = static_cast<int>(frequency);
@@ -800,7 +804,7 @@ void PluginEditor::resized()
 void PluginEditor::drawGainVisualization (juce::Graphics& g)
 {
     // Get current gain value in dB
-    auto gainDB = masterGainSlider.getValue(); // -60dB to +6dB (with -60dB representing -infinity)
+    auto gainDB = static_cast<float>(masterGainSlider.getValue()); // -60dB to +6dB (with -60dB representing -infinity)
     
     // Use linear scale based on dB value
     // For visualization: -60dB (representing -∞) = 0.0, +6dB = 1.0

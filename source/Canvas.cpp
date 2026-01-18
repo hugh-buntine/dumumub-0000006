@@ -119,7 +119,7 @@ void Canvas::newMassPoint()
     // Create GUI component for interaction and custom rendering
     auto* mass = new MassPoint();
     addAndMakeVisible (mass);
-    mass->setCentrePosition (juce::Point<int>(x, y));
+    mass->setCentrePosition (juce::Point<int>(static_cast<int>(x), static_cast<int>(y)));
     
     // Set up callbacks to sync with processor
     mass->onMassDropped = [this]() { repaint(); };
@@ -127,7 +127,7 @@ void Canvas::newMassPoint()
     { 
         // Update processor data when GUI component moves
         int index = massPoints.indexOf (mass);
-        if (index >= 0 && index < audioProcessor.getMassPoints().size())
+        if (index >= 0 && static_cast<size_t>(index) < audioProcessor.getMassPoints().size())
         {
             auto center = mass->getBounds().getCentre();
             audioProcessor.updateMassPoint (index, juce::Point<float>(center.x, center.y), mass->getMassMultiplier());
@@ -172,14 +172,14 @@ void Canvas::newSpawnPoint()
     // Create GUI component for interaction and custom rendering
     auto* spawn = new SpawnPoint();
     addAndMakeVisible (spawn);
-    spawn->setCentrePosition (juce::Point<int>(x, y));
+    spawn->setCentrePosition (juce::Point<int>(static_cast<int>(x), static_cast<int>(y)));
     
     // Set up callbacks to sync with processor
     spawn->onSpawnPointMoved = [this, spawn]() 
     { 
         // Update processor data when GUI component moves
         int index = spawnPoints.indexOf (spawn);
-        if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+        if (index >= 0 && static_cast<size_t>(index) < audioProcessor.getSpawnPoints().size())
         {
             auto center = spawn->getBounds().getCentre();
             // Get the momentum vector angle
@@ -373,7 +373,7 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                                    mass->onMassMoved = [this, mass]() 
                                    { 
                                        int index = massPoints.indexOf (mass);
-                                       if (index >= 0 && index < audioProcessor.getMassPoints().size())
+                                       if (index >= 0 && static_cast<size_t>(index) < audioProcessor.getMassPoints().size())
                                        {
                                            auto center = mass->getBounds().getCentre();
                                            audioProcessor.updateMassPoint (index, juce::Point<float>(center.x, center.y), mass->getMassMultiplier());
@@ -411,7 +411,7 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
                                    spawn->onSpawnPointMoved = [this, spawn]() 
                                    { 
                                        int index = spawnPoints.indexOf (spawn);
-                                       if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+                                       if (index >= 0 && static_cast<size_t>(index) < audioProcessor.getSpawnPoints().size())
                                        {
                                            auto center = spawn->getBounds().getCentre();
                                            auto momentum = spawn->getMomentumVector();
@@ -557,7 +557,7 @@ void Canvas::mouseUp (const juce::MouseEvent& event)
         
         // Update processor with new momentum angle
         int index = spawnPoints.indexOf (draggedArrowSpawnPoint);
-        if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+        if (index >= 0 && static_cast<size_t>(index) < audioProcessor.getSpawnPoints().size())
         {
             auto center = draggedArrowSpawnPoint->getBounds().getCentre();
             float angle = std::atan2(vector.y, vector.x);
@@ -962,7 +962,7 @@ void Canvas::syncGuiFromProcessor()
         { 
             // Update processor data when GUI component moves
             int index = massPoints.indexOf (mass);
-            if (index >= 0 && index < audioProcessor.getMassPoints().size())
+            if (index >= 0 && static_cast<size_t>(index) < audioProcessor.getMassPoints().size())
             {
                 auto center = mass->getBounds().getCentre();
                 audioProcessor.updateMassPoint (index, juce::Point<float>(center.x, center.y), mass->getMassMultiplier());
@@ -1007,11 +1007,11 @@ void Canvas::syncGuiFromProcessor()
         { 
             // Update processor data when GUI component moves
             int index = spawnPoints.indexOf (spawn);
-            if (index >= 0 && index < audioProcessor.getSpawnPoints().size())
+            if (index >= 0 && static_cast<size_t>(index) < audioProcessor.getSpawnPoints().size())
             {
                 auto center = spawn->getBounds().getCentre();
-                auto momentum = spawn->getMomentumVector();
-                float angle = std::atan2(momentum.y, momentum.x);
+                auto momentumVec = spawn->getMomentumVector();
+                float angle = std::atan2(momentumVec.y, momentumVec.x);
                 audioProcessor.updateSpawnPoint (index, juce::Point<float>(center.x, center.y), angle);
             }
             repaint(); 

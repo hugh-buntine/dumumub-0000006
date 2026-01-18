@@ -15,7 +15,7 @@ public:
         auto duruSansData = BinaryData::getNamedResource ("DuruSans_ttf", duruSansSize);
         if (duruSansData != nullptr && duruSansSize > 0)
         {
-            customTypeface = juce::Typeface::createSystemTypefaceFor (duruSansData, duruSansSize);
+            customTypeface = juce::Typeface::createSystemTypefaceFor (duruSansData, static_cast<size_t>(duruSansSize));
         }
         
         setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff141400));
@@ -27,8 +27,8 @@ public:
     juce::Font getPopupMenuFont() override
     {
         if (customTypeface != nullptr)
-            return juce::Font (customTypeface).withHeight (14.0f);
-        return juce::Font (14.0f);
+            return juce::Font (juce::FontOptions (customTypeface).withHeight (14.0f));
+        return juce::Font (juce::FontOptions (14.0f));
     }
     
     int getPopupMenuBorderSize() override
@@ -56,7 +56,9 @@ public:
             
             idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight : juce::roundToInt (font.getHeight() * 1.3f);
             // Make menu wider: multiply by 3 instead of 2 for more horizontal space
-            idealWidth = font.getStringWidth (text) + idealHeight * 3;
+            juce::GlyphArrangement glyphs;
+            glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+            idealWidth = juce::roundToInt (glyphs.getBoundingBox (0, -1, true).getWidth()) + idealHeight * 3;
         }
     }
     
