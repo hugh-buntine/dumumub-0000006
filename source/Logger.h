@@ -61,6 +61,18 @@ public:
      */
     void shutdown();
     
+    /**
+     * @brief Enable or disable logging
+     * @param enabled True to enable logging, false to disable
+     */
+    void setLoggingEnabled(bool enabled);
+    
+    /**
+     * @brief Check if logging is currently enabled
+     * @return True if logging is enabled, false otherwise
+     */
+    bool isLoggingEnabled() const { return loggingEnabled; }
+    
     // Delete copy constructor and assignment operator
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
@@ -72,6 +84,7 @@ private:
     std::unique_ptr<juce::FileLogger> fileLogger;
     juce::File logFile;
     bool isInitialized = false;
+    bool loggingEnabled = true; // Logging enabled by default
 };
 
 // Convenience macros for logging

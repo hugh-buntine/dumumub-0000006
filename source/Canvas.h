@@ -57,12 +57,11 @@ public:
     // Set particle lifespan for newly spawned particles
     void setParticleLifespan (float lifespanSeconds) { particleLifespan = lifespanSeconds; }
     
-    // Set break CPU mode (unlimited particles/masses/spawn points)
-    void setBreakCpuMode (bool enabled);
+    // Set bounce mode (particles bounce off walls instead of wrapping)
+    void setBounceMode (bool enabled);
     
-    // Set graphics mode (enables/disables particle rendering, rotations, waveform glow)
-    void setGraphicsEnabled (bool enabled) { graphicsEnabled = enabled; }
-    bool isGraphicsEnabled() const { return graphicsEnabled; }
+    // Set custom typeface for drop text display
+    void setCustomTypeface (juce::Typeface::Ptr typeface) { customTypeface = typeface; }
     
     // Access to particles - now deprecated, particles live in processor
     // These are kept for backward compatibility during transition
@@ -74,8 +73,7 @@ private:
     // Reference to audio processor (owns the particle simulation)
     PluginProcessor& audioProcessor;
 
-    bool graphicsEnabled = true; // Graphics mode enabled by default
-    bool breakCpuMode = false;
+    bool bounceMode = false;
     int maxSpawnPoints = 8;
     int maxMassPoints = 4;
     int maxParticles = 8;
@@ -108,6 +106,9 @@ private:
     
     // Custom popup menu look and feel
     CustomPopupMenuLookAndFeel popupMenuLookAndFeel;
+    
+    // Custom typeface for drop text display
+    juce::Typeface::Ptr customTypeface;
     
     // Thread safety removed - particles lock now lives in processor
 

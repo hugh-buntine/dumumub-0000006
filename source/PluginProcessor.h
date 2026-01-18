@@ -25,7 +25,8 @@ struct SpawnPointData
     float visualRotation = 0.0f; // Current rotation angle for visual animation only
 };
 
-class PluginProcessor : public juce::AudioProcessor
+class PluginProcessor : public juce::AudioProcessor,
+                         public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     PluginProcessor();
@@ -76,6 +77,10 @@ public:
     juce::OwnedArray<Particle>* getParticles() { return &particles; }
     juce::CriticalSection& getParticlesLock() { return particlesLock; }
     
+    // Helper functions to sync mass/spawn points between arrays and ValueTree
+    void loadPointsFromTree();
+    void savePointsToTree();
+    
     // Mass and spawn point management (called from GUI thread)
     void updateMassPoint (int index, juce::Point<float> position, float massMultiplier);
     void addMassPoint (juce::Point<float> position, float massMultiplier);
@@ -87,25 +92,21 @@ public:
     void removeSpawnPoint (int index);
     const std::vector<SpawnPointData>& getSpawnPoints() const { return spawnPoints; }
     
-    // Particle spawning (called from GUI or MIDI) - now requires MIDI note and ADSR times
+    // Particle spawning (called from GUI or MIDI) - now requires MIDI note and ADSR parameters
     void spawnParticle (juce::Point<float> position, juce::Point<float> velocity,
                        float initialVelocity, float pitchShift, int midiNoteNumber,
-                       float attackTime, float releaseTime);
+                       float attackTime, float sustainLevel, float sustainLevelLinear, float releaseTime);
     
     // Gravity and canvas settings
     void setGravityStrength (float strength) { gravityStrength = strength; }
-    void setCanvasBounds (juce::Rectangle<float> bounds) 
-    { 
-        const juce::ScopedLock lock (canvasBoundsLock);
-        canvasBounds = bounds; 
-    }
-    juce::Rectangle<float> getCanvasBounds() const 
-    { 
-        const juce::ScopedLock lock (canvasBoundsLock);
-        return canvasBounds; 
-    }
+    void setCanvasBounds (juce::Rectangle<float> bounds) { canvasBounds = bounds; }
     void setParticleLifespan (float lifespan) { particleLifespan = lifespan; }
     void setMaxParticles (int max) { maxParticles = max; }
+    void setBounceMode (bool enabled);
+    bool getBounceMode() const { return bounceMode; }
+    
+    // AudioProcessorValueTreeState::Listener implementation
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
@@ -131,25 +132,26 @@ private:
     juce::OwnedArray<Particle> particles;
     juce::CriticalSection particlesLock; // Protects particle array
     
-    // OPTIMIZATION: Use particle IDs instead of indices to avoid O(n²) updates
-    // Maps MIDI note number -> set of particle IDs
-    std::map<int, std::vector<uint64_t>> activeNoteToParticleIDs;
+    // MIDI note to particle mapping for ADSR control
+    std::map<int, std::vector<int>> activeNoteToParticles; // Maps MIDI note number -> particle indices
     
     std::vector<MassPointData> massPoints;
     std::vector<SpawnPointData> spawnPoints;
-    
-    // Random number generator for particle spawning
-    juce::Random randomGenerator;
+    bool stateHasBeenRestored = false; // Track if we've loaded saved state yet
     
     // Simulation parameters
-    float gravityStrength = 100.0f;
-    juce::Rectangle<float> canvasBounds {0, 0, 800, 600};
-    mutable juce::CriticalSection canvasBoundsLock; // THREAD-SAFETY: Protects canvas bounds
+    float gravityStrength = 50000.0f; // Match Canvas default (50000.0f)
+    juce::Rectangle<float> canvasBounds {0, 0, 400, 400}; // Match actual canvas size (400x400)
     float particleLifespan = 30.0f; // Legacy parameter - no longer used with ADSR
     int maxParticles = 8; // Default limit (can be changed via setMaxParticles)
+    bool bounceMode = false; // When true, particles bounce off walls instead of wrapping
     
     // Timing for particle updates
     double lastUpdateTime = 0.0;
+    
+    // Buffer boundary continuity (to prevent clicks when grains overlap)
+    float lastBufferOutputLeft = 0.0f;
+    float lastBufferOutputRight = 0.0f;
     
     // MIDI note handling helpers
     void handleNoteOn (int noteNumber, float velocity, float pitchShift);

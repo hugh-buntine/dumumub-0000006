@@ -10,8 +10,9 @@
 enum class ADSRPhase
 {
     Attack,     // Fading in from 0 to 1
-    Held,       // MIDI key is held, amplitude stays at 1
-    Release,    // MIDI key released, fading from 1 to 0
+    Decay,      // Dropping from 1 to sustain level
+    Sustain,    // Held at sustain level while MIDI key is held
+    Release,    // MIDI key released, fading from sustain to 0
     Finished    // Release complete, particle should be removed
 };
 
@@ -21,9 +22,11 @@ struct Grain
 {
     int startSample = 0;        // Where in the audio buffer this grain starts
     int playbackPosition = 0;   // Current playback position within this grain
+    int totalSamples = 0;       // Total size of THIS grain (captured at creation time)
     bool active = true;         // Is this grain still playing?
+    int samplesRenderedThisBuffer = 0; // BUG #14 FIX: Track actual samples rendered per buffer
     
-    Grain (int start) : startSample (start) {}
+    Grain (int start, int size) : startSample (start), totalSamples (size) {}
 };
 
 //==============================================================================
@@ -32,7 +35,7 @@ class Particle
 public:
     Particle (juce::Point<float> position, juce::Point<float> velocity, 
               const juce::Rectangle<float>& canvasBounds, int midiNoteNumber,
-              float attackTime, float releaseTime,
+              float attackTime, float sustainLevel, float sustainLevelLinear, float releaseTime,
               float initialVelocity = 1.0f, float pitchShift = 1.0f);
     ~Particle();
 
@@ -40,6 +43,7 @@ public:
     void update (float deltaTime);
     void applyForce (const juce::Point<float>& force);
     void wrapAround (const juce::Rectangle<float>& bounds);
+    void bounceOff (const juce::Rectangle<float>& bounds);
     
     // Getters
     juce::Point<float> getPosition() const { return position; }
@@ -55,8 +59,10 @@ public:
     
     // ADSR control
     void updateADSR (float deltaTime);
+    void updateADSRSample (double sampleRate);  // Update ADSR for single sample (for smooth short attack/release)
     void triggerRelease();
     float getADSRAmplitude() const { return adsrAmplitude; }
+    float getADSRAmplitudeSmoothed() const { return adsrAmplitudeSmoothed; } // Smoothed version without stepping artifacts
     
     // Audio grain getters
     float getGrainSizeMs() const { return grainSizeMs; }
@@ -77,6 +83,10 @@ public:
     
     // Setter to convert normalized position to actual sample index
     void setGrainStartSampleFromBuffer (int bufferLength);
+    
+    // Set bounce mode (affects edge panning behavior)
+    void setBounceMode (bool enabled) { bounceMode = enabled; }
+    bool getBounceMode() const { return bounceMode; }
     
     // Update grain start position based on current Y position (for continuous grains)
     int calculateGrainStartPosition (int bufferLength);
@@ -107,6 +117,9 @@ public:
     // Set the star image for all particles to use
     static void setStarImage (const juce::Image& image) { starImage = image; }
     
+    // Static Hann window lookup table initialization (call once at startup)
+    static void initializeHannTable();
+    
     // Draw the particle
     void draw (juce::Graphics& g);
     
@@ -129,8 +142,15 @@ private:
     ADSRPhase adsrPhase = ADSRPhase::Attack;
     float adsrTime = 0.0f;             // Time spent in current ADSR phase
     float attackTime = 0.01f;          // Attack duration in seconds
+    float sustainLevel = 0.7f;         // Sustain level (0.0-1.0, logarithmic for audio)
+    float sustainLevelLinear = 0.7f;   // Sustain level (0.0-1.0, linear slider value for visuals)
     float releaseTime = 0.5f;          // Release duration in seconds
-    float adsrAmplitude = 0.0f;        // Current envelope amplitude (0.0-1.0)
+    float adsrAmplitude = 0.0f;        // Current envelope amplitude (0.0-1.0, logarithmic for audio)
+    float adsrAmplitudeLinear = 0.0f;  // Current envelope amplitude (0.0-1.0, linear for visuals)
+    float adsrAmplitudeSmoothed = 0.0f; // Smoothed ADSR amplitude to eliminate stepping artifacts
+    float releaseStartAmplitude = 0.0f; // Amplitude at which release was triggered (for smooth release from any phase)
+    float releaseStartAmplitudeLinear = 0.0f; // Linear amplitude at which release was triggered
+    static constexpr float decayTime = 0.3f;  // Decay duration (fixed at 300ms for smooth transition)
     
     // MIDI parameters
     float initialVelocityMultiplier = 1.0f; // MIDI velocity mapped to 0.0-1.0
@@ -148,8 +168,12 @@ private:
     // Canvas bounds for position mapping
     juce::Rectangle<float> canvasBounds;
     
+    // Bounce mode (affects edge panning behavior)
+    bool bounceMode = false;
+    
     // Active grains (can have multiple overlapping)
     std::vector<Grain> activeGrains;
+    static constexpr int MAX_GRAINS_PER_PARTICLE = 8; // CPU optimization: limit concurrent grains
     
     // Grain audio parameters
     float grainSizeMs = 50.0f;      // Grain duration in milliseconds
@@ -181,5 +205,10 @@ private:
     
     // Static star image shared by all particles
     static juce::Image starImage;
+    
+    // Static Hann window lookup table (shared by all particles for efficiency)
+    static std::vector<float> hannWindowTable;
+    static constexpr int HANN_TABLE_SIZE = 512; // 512 samples provides smooth interpolation
+    static float getHannWindowValue (float normalizedPosition); // Fast lookup with linear interpolation
 };
 

@@ -62,8 +62,8 @@ private:
     juce::ComponentBoundsConstrainer constrainer;
     
     // Size states for double-click cycling (4 sizes: 50, 100, 150, 200)
-    int radius = 200; // Start at biggest size
-    float massMultiplier = 4.0f; // Match the biggest size (200/50 = 4.0)
+    int radius = 100; // Start at medium size
+    float massMultiplier = 2.0f; // Match medium size (100/50 = 2.0)
     static constexpr int minRadius = 50;
     static constexpr int maxRadius = 200;
     static constexpr int radiusStep = 50;

@@ -16,6 +16,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                   BinaryData::TITLE_pngSize);
     sliderCasesImage = juce::ImageCache::getFromMemory (BinaryData::SLIDERCASES_png, 
                                                         BinaryData::SLIDERCASES_pngSize);
+    sliderCasesCoverImage = juce::ImageCache::getFromMemory (BinaryData::SLIDERCASESCOVER_png, 
+                                                              BinaryData::SLIDERCASESCOVER_pngSize);
     dropTextImage = juce::ImageCache::getFromMemory (BinaryData::DROPTEXT_png, 
                                                      BinaryData::DROPTEXT_pngSize);
     
@@ -40,11 +42,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     auto knob3 = juce::ImageCache::getFromMemory (BinaryData::KNOB3_png, BinaryData::KNOB3_pngSize);
     auto knob3Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB3HOVER_png, BinaryData::KNOB3HOVER_pngSize);
-    lifespanLookAndFeel.setKnobImages (knob3, knob3Hover);
+    decayLookAndFeel.setKnobImages (knob3, knob3Hover);
     
     auto knob4 = juce::ImageCache::getFromMemory (BinaryData::KNOB4_png, BinaryData::KNOB4_pngSize);
     auto knob4Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB4HOVER_png, BinaryData::KNOB4HOVER_pngSize);
-    grainSizeLookAndFeel.setKnobImages (knob4, knob4Hover);
+    sustainLookAndFeel.setKnobImages (knob4, knob4Hover);
     
     auto knob5 = juce::ImageCache::getFromMemory (BinaryData::KNOB5_png, BinaryData::KNOB5_pngSize);
     auto knob5Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB5HOVER_png, BinaryData::KNOB5HOVER_pngSize);
@@ -52,7 +54,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     auto knob6 = juce::ImageCache::getFromMemory (BinaryData::KNOB6_png, BinaryData::KNOB6_pngSize);
     auto knob6Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB6HOVER_png, BinaryData::KNOB6HOVER_pngSize);
-    masterGainLookAndFeel.setKnobImages (knob6, knob6Hover);
+    grainSizeLookAndFeel.setKnobImages (knob6, knob6Hover);
+    
+    auto gainKnob = juce::ImageCache::getFromMemory (BinaryData::GAINKNOB_png, BinaryData::GAINKNOB_pngSize);
+    auto gainKnobHover = juce::ImageCache::getFromMemory (BinaryData::GAINKNOBHOVER_png, BinaryData::GAINKNOBHOVER_pngSize);
+    masterGainLookAndFeel.setKnobImages (gainKnob, gainKnobHover);
     
     // Load button images
     graphicsButtonUnpressed = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONUNPRESSED_png, 
@@ -64,32 +70,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     graphicsButtonPressedHover = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONPRESSEDHOVER_png, 
                                                                   BinaryData::GRAPHICSBUTTONPRESSEDHOVER_pngSize);
     
-    breakCpuButtonUnpressed = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUUNPRESSED_png, 
-                                                               BinaryData::BREAKCPUUNPRESSED_pngSize);
-    breakCpuButtonUnpressedHover = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUUNPRESSEDHOVER_png, 
-                                                                    BinaryData::BREAKCPUUNPRESSEDHOVER_pngSize);
-    breakCpuButtonPressed = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUPRESSED_png, 
-                                                             BinaryData::BREAKCPUPRESSED_pngSize);
-    breakCpuButtonPressedHover = juce::ImageCache::getFromMemory (BinaryData::BREAKCPUPRESSEDHOVER_png, 
-                                                                  BinaryData::BREAKCPUPRESSEDHOVER_pngSize);
-    
     // Setup Graphics button
     addAndMakeVisible (graphicsButton);
     graphicsButton.setImages (graphicsButtonUnpressed, graphicsButtonUnpressedHover,
                              graphicsButtonPressed, graphicsButtonPressedHover);
-    graphicsButton.setToggleState (true, juce::dontSendNotification);  // Default ON
     graphicsButton.onClick = [this]() {
-        // Update canvas graphics enabled state based on button state
-        canvas.setGraphicsEnabled (graphicsButton.getToggleState());
-    };
-    
-    // Setup Break CPU button
-    addAndMakeVisible (breakCpuButton);
-    breakCpuButton.setImages (breakCpuButtonUnpressed, breakCpuButtonUnpressedHover,
-                             breakCpuButtonPressed, breakCpuButtonPressedHover);
-    breakCpuButton.onClick = [this]() {
-        // Update canvas limits based on button state
-        canvas.setBreakCpuMode (breakCpuButton.getToggleState());
+        LOG_INFO("PluginEditor - Graphics button clicked, new state: " + 
+                 juce::String(graphicsButton.getToggleState() ? "ON" : "OFF"));
+        // Update canvas bounce mode based on button state
+        canvas.setBounceMode (graphicsButton.getToggleState());
     };
     
     // Load and set star image for particles
@@ -133,6 +122,35 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                               BinaryData::VORTEX4HOVER_pngSize);
     MassPoint::setVortexHoverImages (vortexImage1Hover, vortexImage2Hover, vortexImage3Hover, vortexImage4Hover);
 
+    // Create image components for setAlwaysOnTop functionality
+    // Canvas Border Component
+    canvasBorderComponent = std::make_unique<ImageComponent>();
+    canvasBorderComponent->setImage(canvasBorderImage);
+    addAndMakeVisible(*canvasBorderComponent);
+    canvasBorderComponent->setBounds(0, 70, 500, 500);
+    canvasBorderComponent->setAlwaysOnTop(true);
+    
+    // Slider Cases Component
+    sliderCasesComponent = std::make_unique<ImageComponent>();
+    sliderCasesComponent->setImage(sliderCasesImage);
+    addAndMakeVisible(*sliderCasesComponent);
+    sliderCasesComponent->setBounds(40, 560, 415, 185);
+    sliderCasesComponent->setAlwaysOnTop(true);
+    
+    // Slider Cases Cover Component
+    sliderCasesCoverComponent = std::make_unique<ImageComponent>();
+    sliderCasesCoverComponent->setImage(sliderCasesCoverImage);
+    addAndMakeVisible(*sliderCasesCoverComponent);
+    sliderCasesCoverComponent->setBounds(10, 562, 480, 182);
+    sliderCasesCoverComponent->setAlwaysOnTop(true);
+    
+    // Title Component
+    titleComponent = std::make_unique<ImageComponent>();
+    titleComponent->setImage(titleImage);
+    addAndMakeVisible(*titleComponent);
+    titleComponent->setBounds(0, 0, 500, 118);
+    titleComponent->setAlwaysOnTop(true);
+
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
     setSize (500, 800);
@@ -142,6 +160,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     // Give processor reference to canvas for audio rendering
     processorRef.setCanvas (&canvas);
+    
+    // Pass custom typeface to canvas for drop text display
+    canvas.setCustomTypeface (customTypeface);
     
     // Setup audio file loading callback
     canvas.onAudioFileLoaded = [this](const juce::File& file) {
@@ -186,6 +207,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     attackSlider.setLookAndFeel (&attackLookAndFeel);
     attackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "attack", attackSlider);
+    attackSlider.onValueChange = [this]() { attackSlider.repaint(); };
+    attackSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
+        activeSliderName = "ATTACK";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Release
     addAndMakeVisible (releaseSlider);
@@ -194,14 +223,50 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     releaseSlider.setLookAndFeel (&releaseLookAndFeel);
     releaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "release", releaseSlider);
+    releaseSlider.onValueChange = [this]() { releaseSlider.repaint(); };
+    releaseSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
+        activeSliderName = "RELEASE";
+        activeSliderValue = value;
+        repaint();
+    };
     
-    // Randomness (controls emission direction variance)
-    addAndMakeVisible (lifespanSlider);
-    lifespanSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    lifespanSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    lifespanSlider.setLookAndFeel (&lifespanLookAndFeel);
-    lifespanAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        apvts, "randomness", lifespanSlider);
+    // Decay
+    addAndMakeVisible (decaySlider);
+    decaySlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    decaySlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    decaySlider.setLookAndFeel (&decayLookAndFeel);
+    decayAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, "decay", decaySlider);
+    decaySlider.onValueChange = [this]() { decaySlider.repaint(); };
+    decaySlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
+        activeSliderName = "DECAY";
+        activeSliderValue = value;
+        repaint();
+    };
+    
+    // Sustain Level
+    addAndMakeVisible (sustainSlider);
+    sustainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    sustainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    sustainSlider.setLookAndFeel (&sustainLookAndFeel);
+    sustainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, "sustain", sustainSlider);
+    
+    // Update display when parameter changes
+    sustainSlider.onValueChange = [this]() {
+        sustainSlider.repaint();
+    };
+    sustainSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingADSRCurve = isDragging;
+        activeSliderName = "SUSTAIN";
+        activeSliderValue = value * 100.0; // Display as percentage
+        repaint();
+    };
     
     // Grain Size
     addAndMakeVisible (grainSizeSlider);
@@ -210,6 +275,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     grainSizeSlider.setLookAndFeel (&grainSizeLookAndFeel);
     grainSizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "grainSize", grainSizeSlider);
+    grainSizeSlider.onValueChange = [this]() { grainSizeSlider.repaint(); };
+    grainSizeSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingGrainSizeWaveform = isDragging;
+        activeSliderName = "GRAIN SIZE";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Grain Frequency
     addAndMakeVisible (grainFreqSlider);
@@ -218,6 +291,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     grainFreqSlider.setLookAndFeel (&grainFreqLookAndFeel);
     grainFreqAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "grainFreq", grainFreqSlider);
+    grainFreqSlider.onValueChange = [this]() { grainFreqSlider.repaint(); };
+    grainFreqSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingGrainFreqWaveforms = isDragging;
+        activeSliderName = "GRAIN FREQ";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Master Gain
     addAndMakeVisible (masterGainSlider);
@@ -226,6 +307,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     masterGainSlider.setLookAndFeel (&masterGainLookAndFeel);
     masterGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "masterGain", masterGainSlider);
+    masterGainSlider.onValueChange = [this]() { masterGainSlider.repaint(); };
+    masterGainSlider.onDragStateChanged = [this](bool isDragging, double value) {
+        showingSliderValue = isDragging;
+        showingGainVisualization = isDragging;
+        activeSliderName = "MASTER GAIN";
+        activeSliderValue = value;
+        repaint();
+    };
     
     // Check if audio file was already loaded (from restored state)
     if (processorRef.hasAudioFileLoaded())
@@ -242,7 +331,8 @@ PluginEditor::~PluginEditor()
     // Reset LookAndFeel before sliders are destroyed
     attackSlider.setLookAndFeel (nullptr);
     releaseSlider.setLookAndFeel (nullptr);
-    lifespanSlider.setLookAndFeel (nullptr);
+    decaySlider.setLookAndFeel (nullptr);
+    sustainSlider.setLookAndFeel (nullptr);
     grainSizeSlider.setLookAndFeel (nullptr);
     grainFreqSlider.setLookAndFeel (nullptr);
     masterGainSlider.setLookAndFeel (nullptr);
@@ -285,30 +375,56 @@ void PluginEditor::paint (juce::Graphics& g)
         g.drawImage (canvasBackgroundImage, juce::Rectangle<float> (25.0f, 100.0f, 450.0f, 450.0f),
                     juce::RectanglePlacement::fillDestination);
     }
+    
+    // Draw slider visualizations (behind components, so they appear under canvas border)
+    
+    // Draw slider value in center of canvas when dragging
+    if (showingSliderValue && customTypeface != nullptr)
+    {
+        // Format value based on range
+        juce::String valueText;
+        if (activeSliderValue >= 100.0)
+            valueText = juce::String (static_cast<int>(activeSliderValue));
+        else if (activeSliderValue >= 10.0)
+            valueText = juce::String (activeSliderValue, 1);
+        else
+            valueText = juce::String (activeSliderValue, 2);
+        
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.4f)); // Slightly more opaque than particle count
+        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (80.0f)); // Way bigger font
+        g.setFont (font);
+        
+        // Draw in center of canvas
+        auto canvasBounds = canvas.getBounds();
+        auto centerX = canvasBounds.getCentreX();
+        auto centerY = canvasBounds.getCentreY();
+        
+        g.drawText (valueText, 
+                   juce::Rectangle<float>(centerX - 200.0f, centerY - 40.0f, 400.0f, 80.0f), 
+                   juce::Justification::centred, true);
+    }
+    
+    // Draw ADSR curve only when Attack, Release, or Sustain sliders are being dragged
+    if (showingADSRCurve)
+        drawADSRCurve (g);
+    
+    // Draw grain size waveform when Grain Size slider is being dragged
+    if (showingGrainSizeWaveform)
+        drawGrainSizeWaveform (g);
+    
+    // Draw multiple waveforms when Grain Frequency slider is being dragged
+    if (showingGrainFreqWaveforms)
+        drawGrainSizeWaveform (g); // Reuse the same waveform drawing, but draw it multiple times
+    
+    // Draw gain visualization when Master Gain slider is being dragged
+    if (showingGainVisualization)
+        drawGainVisualization (g);
 }
 
 void PluginEditor::paintOverChildren (juce::Graphics& g)
 {
-    // Draw canvas border on top of everything at (0, 70) with 500x500 size
-    if (canvasBorderImage.isValid())
-    {
-        g.drawImage (canvasBorderImage, juce::Rectangle<float> (0.0f, 70.0f, 500.0f, 500.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
-    
-    // Draw slider cases on top of sliders at (40, 560) with 415x185 size
-    if (sliderCasesImage.isValid())
-    {
-        g.drawImage (sliderCasesImage, juce::Rectangle<float> (40.0f, 560.0f, 415.0f, 185.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
-    
-    // Draw title at top (0, 0) with 500x118 size - on top of everything
-    if (titleImage.isValid())
-    {
-        g.drawImage (titleImage, juce::Rectangle<float> (0.0f, 0.0f, 500.0f, 118.0f),
-                    juce::RectanglePlacement::fillDestination);
-    }
+    // NOTE: Canvas border, slider cases, slider cases cover, and title are now 
+    // drawn by their respective components with setAlwaysOnTop(true) instead of here
     
     // Draw drop-text image or filename at top of canvas
     auto labelBounds = audioFileLabel.getBounds();
@@ -342,7 +458,9 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
             
             // Calculate letter spacing to spread text across 340px
             auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (12.0f));
-            auto naturalWidth = font.getStringWidthFloat (text);
+            juce::GlyphArrangement glyphs;
+            glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+            auto naturalWidth = glyphs.getBoundingBox (0, -1, true).getWidth();
             auto targetWidth = 340.0f;
             auto extraSpaceNeeded = targetWidth - naturalWidth;
             auto letterSpacing = (text.length() > 1) ? extraSpaceNeeded / (text.length() - 1) : 0.0f;
@@ -373,12 +491,260 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
         
         // Position text in bottom right corner of canvas with more padding (further up and more left)
         auto canvasBounds = canvas.getBounds(); // Get canvas bounds
-        auto textWidth = font.getStringWidthFloat (text);
+        juce::GlyphArrangement textGlyphs;
+        textGlyphs.addLineOfText (font, text, 0.0f, 0.0f);
+        auto textWidth = textGlyphs.getBoundingBox (0, -1, true).getWidth();
         auto textX = canvasBounds.getRight() - textWidth - 20.0f; // 20px padding from right (was 10px)
         auto textY = canvasBounds.getBottom() - 40.0f; // 40px from bottom (higher than before)
         
         g.drawText (text, juce::Rectangle<float>(textX, textY, textWidth, 20.0f), 
                    juce::Justification::centredRight, true);
+    }
+}
+
+void PluginEditor::drawADSRCurve (juce::Graphics& g)
+{
+    // Get current ADSR parameter values
+    auto attack = attackSlider.getValue();
+    auto decay = decaySlider.getValue();
+    auto sustainLinear = sustainSlider.getValue(); // Linear 0.0-1.0 from parameter
+    auto release = releaseSlider.getValue();
+    
+    // Use LINEAR sustain value for visual display (matches slider position intuitively)
+    // Audio uses logarithmic conversion, but visual should show what the slider shows
+    float sustain = static_cast<float>(sustainLinear);
+    
+    // Use bottom two-thirds of canvas for drawing area
+    auto canvasBounds = canvas.getBounds();
+    float curveX = canvasBounds.getX();
+    float curveY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f); // Start 1/3 down
+    float curveWidth = canvasBounds.getWidth();
+    float curveHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
+    
+    // Calculate time scaling
+    float totalTime = static_cast<float>(attack + decay + 0.5f + release); // +0.5s for sustain display
+    float timeScale = curveWidth / totalTime;
+    
+    // Build the path for ADSR curve
+    juce::Path adsrPath;
+    
+    // Start at bottom left (silence)
+    float startX = curveX;
+    float baseY = curveY + curveHeight;
+    adsrPath.startNewSubPath (startX, baseY);
+    
+    // Attack phase - exponential curve (x^2)
+    int attackSteps = 20;
+    for (int i = 1; i <= attackSteps; ++i)
+    {
+        float t = i / static_cast<float>(attackSteps);
+        float normalized = t * t; // Exponential attack
+        float x = startX + (t * static_cast<float>(attack) * timeScale);
+        float y = baseY - (normalized * curveHeight);
+        adsrPath.lineTo (x, y);
+    }
+    
+    // Decay phase - inverse exponential curve down to sustain level
+    float decayStartX = startX + (static_cast<float>(attack) * timeScale);
+    int decaySteps = 15;
+    for (int i = 1; i <= decaySteps; ++i)
+    {
+        float t = i / static_cast<float>(decaySteps);
+        float invExp = 1.0f - std::pow (1.0f - t, 3.0f); // Inverse exponential
+        float level = 1.0f - (invExp * (1.0f - sustain)); // From 1.0 down to sustain
+        float x = decayStartX + (t * static_cast<float>(decay) * timeScale);
+        float y = baseY - (level * curveHeight);
+        adsrPath.lineTo (x, y);
+    }
+    
+    // Sustain phase - flat line at sustain level
+    float sustainStartX = decayStartX + (static_cast<float>(decay) * timeScale);
+    float sustainEndX = sustainStartX + (0.5f * timeScale);
+    float sustainY = baseY - (sustain * curveHeight);
+    adsrPath.lineTo (sustainEndX, sustainY);
+    
+    // Release phase - inverse exponential curve down to silence
+    int releaseSteps = 20;
+    for (int i = 1; i <= releaseSteps; ++i)
+    {
+        float t = i / static_cast<float>(releaseSteps);
+        float invExp = 1.0f - std::pow (1.0f - t, 4.0f); // Inverse exponential (fast at first, slower at end)
+        float level = sustain - (invExp * sustain); // From sustain down to 0
+        float x = sustainEndX + (t * static_cast<float>(release) * timeScale);
+        float y = baseY - (level * curveHeight);
+        adsrPath.lineTo (x, y);
+    }
+    
+    // Close the path by connecting to baseline and back to start
+    float endX = sustainEndX + (static_cast<float>(release) * timeScale);
+    adsrPath.lineTo (endX, baseY); // Down to baseline at end
+    adsrPath.lineTo (startX, baseY); // Back to start along baseline
+    adsrPath.closeSubPath();
+    
+    // Fill with gradient (top to bottom, very subtle)
+    auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
+    juce::ColourGradient gradient (colour.withAlpha(0.08f), curveX, curveY,
+                                   colour.withAlpha(0.02f), curveX, baseY, false);
+    g.setGradientFill (gradient);
+    g.fillPath (adsrPath);
+    
+    // Draw outline on top (very transparent)
+    g.setColour (colour.withAlpha (0.15f));
+    g.strokePath (adsrPath, juce::PathStrokeType (1.5f));
+}
+
+void PluginEditor::drawGrainSizeWaveform (juce::Graphics& g)
+{
+    // Check if audio is loaded
+    const auto* audioBuffer = processorRef.getAudioBuffer();
+    if (audioBuffer == nullptr || audioBuffer->getNumSamples() == 0)
+        return;
+    
+    // Use canvas bounds for drawing area
+    auto canvasBounds = canvas.getBounds();
+    float canvasWidth = canvasBounds.getWidth();
+    float canvasHeight = canvasBounds.getHeight();
+    float canvasX = canvasBounds.getX();
+    float canvasY = canvasBounds.getY();
+    
+    auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
+    
+    if (showingGrainFreqWaveforms)
+    {
+        // Frequency visualization with circles
+        float frequency = static_cast<float>(grainFreqSlider.getValue());
+        
+        // Get whole and fractional parts
+        int wholeCircles = static_cast<int>(frequency);
+        float fractionalPart = frequency - wholeCircles;
+        
+        // Circle radius
+        float circleRadius = 5.0f;
+        
+        // Predetermined circle positions (normalized 0-1, relative to canvas)
+        // These are hardcoded to look random but consistent
+        static const float circlePositions[][2] = {
+            {0.52f, 0.48f}, {0.38f, 0.62f}, {0.71f, 0.35f}, {0.29f, 0.41f}, {0.64f, 0.69f},
+            {0.45f, 0.27f}, {0.82f, 0.58f}, {0.19f, 0.73f}, {0.56f, 0.15f}, {0.33f, 0.85f},
+            {0.77f, 0.44f}, {0.41f, 0.56f}, {0.68f, 0.22f}, {0.24f, 0.67f}, {0.59f, 0.81f},
+            {0.88f, 0.39f}, {0.15f, 0.49f}, {0.49f, 0.92f}, {0.73f, 0.13f}, {0.35f, 0.28f},
+            {0.62f, 0.76f}, {0.27f, 0.54f}, {0.81f, 0.66f}, {0.43f, 0.19f}, {0.69f, 0.87f},
+            {0.21f, 0.36f}, {0.58f, 0.61f}, {0.91f, 0.25f}, {0.37f, 0.78f}, {0.76f, 0.51f},
+            {0.48f, 0.34f}, {0.84f, 0.72f}, {0.26f, 0.45f}, {0.65f, 0.18f}, {0.39f, 0.89f},
+            {0.72f, 0.57f}, {0.18f, 0.64f}, {0.54f, 0.31f}, {0.87f, 0.83f}, {0.31f, 0.24f},
+            {0.67f, 0.46f}, {0.44f, 0.74f}, {0.79f, 0.29f}, {0.23f, 0.59f}, {0.61f, 0.91f},
+            {0.36f, 0.16f}, {0.74f, 0.68f}, {0.28f, 0.52f}, {0.85f, 0.37f}, {0.47f, 0.79f},
+            {0.53f, 0.42f}, {0.92f, 0.63f}, {0.34f, 0.21f}, {0.71f, 0.86f}, {0.25f, 0.47f},
+            {0.63f, 0.33f}, {0.46f, 0.71f}, {0.83f, 0.54f}, {0.32f, 0.88f}, {0.69f, 0.26f},
+            {0.51f, 0.65f}, {0.89f, 0.48f}, {0.38f, 0.32f}, {0.76f, 0.77f}, {0.22f, 0.43f},
+            {0.58f, 0.19f}, {0.42f, 0.84f}, {0.78f, 0.61f}, {0.29f, 0.38f}, {0.66f, 0.53f},
+            {0.17f, 0.69f}, {0.55f, 0.23f}, {0.86f, 0.75f}, {0.41f, 0.51f}, {0.73f, 0.36f},
+            {0.33f, 0.82f}, {0.64f, 0.14f}, {0.48f, 0.67f}, {0.81f, 0.45f}, {0.27f, 0.58f},
+            {0.57f, 0.28f}, {0.93f, 0.71f}, {0.39f, 0.44f}, {0.75f, 0.89f}, {0.24f, 0.33f},
+            {0.62f, 0.56f}, {0.45f, 0.18f}, {0.84f, 0.64f}, {0.35f, 0.79f}, {0.68f, 0.41f},
+            {0.21f, 0.55f}, {0.59f, 0.93f}, {0.88f, 0.31f}, {0.43f, 0.72f}, {0.77f, 0.24f},
+            {0.31f, 0.61f}, {0.65f, 0.47f}, {0.49f, 0.85f}, {0.82f, 0.38f}, {0.37f, 0.69f},
+            {0.71f, 0.52f}, {0.26f, 0.27f}, {0.54f, 0.76f}, {0.91f, 0.59f}, {0.44f, 0.35f},
+            {0.79f, 0.81f}, {0.32f, 0.46f}, {0.67f, 0.21f}, {0.47f, 0.88f}, {0.85f, 0.57f},
+            {0.38f, 0.39f}, {0.74f, 0.73f}, {0.28f, 0.63f}, {0.61f, 0.17f}, {0.51f, 0.84f},
+            {0.89f, 0.42f}, {0.36f, 0.68f}, {0.72f, 0.29f}, {0.23f, 0.54f}, {0.58f, 0.91f},
+            {0.42f, 0.26f}, {0.76f, 0.65f}, {0.33f, 0.48f}, {0.69f, 0.83f}, {0.25f, 0.37f},
+            {0.63f, 0.59f}, {0.46f, 0.22f}, {0.81f, 0.74f}, {0.37f, 0.51f}, {0.73f, 0.16f},
+            {0.29f, 0.86f}, {0.66f, 0.43f}, {0.52f, 0.71f}, {0.87f, 0.34f}, {0.41f, 0.62f},
+            {0.78f, 0.49f}, {0.34f, 0.77f}, {0.68f, 0.28f}, {0.24f, 0.56f}, {0.59f, 0.19f},
+            {0.48f, 0.82f}, {0.83f, 0.47f}, {0.39f, 0.66f}, {0.75f, 0.31f}, {0.31f, 0.72f},
+            {0.64f, 0.53f}, {0.21f, 0.41f}, {0.57f, 0.87f}, {0.92f, 0.38f}, {0.43f, 0.64f},
+            {0.77f, 0.23f}, {0.35f, 0.58f}, {0.69f, 0.46f}, {0.27f, 0.81f}, {0.61f, 0.35f},
+            {0.47f, 0.69f}, {0.84f, 0.52f}, {0.38f, 0.25f}, {0.72f, 0.78f}, {0.26f, 0.44f},
+            {0.58f, 0.16f}, {0.91f, 0.67f}, {0.44f, 0.53f}, {0.79f, 0.36f}, {0.33f, 0.75f},
+            {0.65f, 0.27f}, {0.49f, 0.89f}, {0.82f, 0.58f}, {0.36f, 0.42f}, {0.71f, 0.63f},
+            {0.23f, 0.31f}, {0.56f, 0.79f}, {0.88f, 0.46f}, {0.42f, 0.68f}, {0.76f, 0.21f},
+            {0.32f, 0.57f}, {0.67f, 0.84f}, {0.45f, 0.39f}, {0.81f, 0.72f}, {0.37f, 0.29f},
+            {0.73f, 0.61f}, {0.28f, 0.48f}, {0.62f, 0.18f}, {0.51f, 0.86f}, {0.87f, 0.43f},
+            {0.39f, 0.74f}, {0.75f, 0.32f}, {0.31f, 0.66f}, {0.64f, 0.49f}, {0.22f, 0.83f},
+            {0.57f, 0.37f}, {0.93f, 0.69f}, {0.46f, 0.54f}, {0.79f, 0.24f}, {0.34f, 0.59f}
+        };
+        
+        const int maxCircles = 200; // Maximum number of circles
+        
+        // Draw whole circles
+        for (int i = 0; i < wholeCircles && i < maxCircles; ++i)
+        {
+            float x = canvasX + circlePositions[i][0] * canvasWidth;
+            float y = canvasY + circlePositions[i][1] * canvasHeight;
+            
+            g.setColour (colour.withAlpha (0.15f));
+            g.fillEllipse (x - circleRadius, y - circleRadius, circleRadius * 2, circleRadius * 2);
+        }
+        
+        // Draw fractional circle if needed
+        if (fractionalPart > 0.01f && wholeCircles < maxCircles)
+        {
+            float x = canvasX + circlePositions[wholeCircles][0] * canvasWidth;
+            float y = canvasY + circlePositions[wholeCircles][1] * canvasHeight;
+            
+            float alpha = 0.15f * fractionalPart; // Scale alpha by fractional amount
+            g.setColour (colour.withAlpha (alpha));
+            g.fillEllipse (x - circleRadius, y - circleRadius, circleRadius * 2, circleRadius * 2);
+        }
+    }
+    else
+    {
+        // Single waveform for grain size visualization
+        // Get grain size in milliseconds and convert to samples
+        auto grainSizeMs = grainSizeSlider.getValue();
+        auto sampleRate = processorRef.getSampleRate();
+        if (sampleRate <= 0.0)
+            sampleRate = 44100.0; // Fallback
+        
+        int grainSizeSamples = static_cast<int>((grainSizeMs / 1000.0) * sampleRate);
+        grainSizeSamples = juce::jlimit (1, audioBuffer->getNumSamples(), grainSizeSamples);
+        
+        // Sample from the middle of the audio buffer for the grain size duration
+        int startSample = (audioBuffer->getNumSamples() - grainSizeSamples) / 2;
+        startSample = juce::jlimit (0, audioBuffer->getNumSamples() - grainSizeSamples, startSample);
+        
+        juce::Path waveformPath;
+        bool pathStarted = false;
+        
+        int numPoints = 200; // Number of points to sample for smooth curve
+        float xStep = canvasWidth / static_cast<float>(numPoints);
+        float waveformCenterY = canvasY + (canvasHeight * 0.5f);
+        
+        for (int i = 0; i < numPoints; ++i)
+        {
+            // Map i to sample index within the grain size
+            float t = i / static_cast<float>(numPoints - 1);
+            int sampleIndex = startSample + static_cast<int>(t * grainSizeSamples);
+            sampleIndex = juce::jlimit (0, audioBuffer->getNumSamples() - 1, sampleIndex);
+            
+            // Get average magnitude across all channels
+            float magnitude = 0.0f;
+            for (int channel = 0; channel < audioBuffer->getNumChannels(); ++channel)
+            {
+                magnitude += audioBuffer->getSample (channel, sampleIndex);
+            }
+            magnitude /= audioBuffer->getNumChannels();
+            
+            // Scale magnitude to canvas height
+            float scaleFactor = 0.3f;
+            float x = canvasX + (i * xStep);
+            float y = waveformCenterY - (magnitude * canvasHeight * scaleFactor);
+            
+            if (!pathStarted)
+            {
+                waveformPath.startNewSubPath (x, y);
+                pathStarted = true;
+            }
+            else
+            {
+                waveformPath.lineTo (x, y);
+            }
+        }
+        
+        // Draw outline
+        g.setColour (colour.withAlpha (0.15f));
+        g.strokePath (waveformPath, juce::PathStrokeType (1.5f));
     }
 }
 
@@ -410,13 +776,16 @@ void PluginEditor::resized()
     attackSlider.setBounds (leftColumnX, startY - 7, sliderWidth, sliderHeight);
     releaseSlider.setBounds (rightColumnX, startY - 7, sliderWidth, sliderHeight);
     
-    // Row 2: Randomness (left), Grain Size (right) - moved up 1px
-    lifespanSlider.setBounds (leftColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
-    grainSizeSlider.setBounds (rightColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
+    // Row 2: Decay (left), Sustain (right) - moved up 1px
+    decaySlider.setBounds (leftColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
+    sustainSlider.setBounds (rightColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
     
-    // Row 3: Frequency (left), Master Gain (right) - moved down 5px, then up 2px = +3px
+    // Row 3: Grain Frequency (left), Grain Size (right) - moved down 5px, then up 2px = +3px
     grainFreqSlider.setBounds (leftColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
-    masterGainSlider.setBounds (rightColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
+    grainSizeSlider.setBounds (rightColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
+    
+    // Row 4: Master Gain (bottom right) - positioned at (247, 749) with 234px length
+    masterGainSlider.setBounds (247, 749, 234, sliderHeight);
     
     // Image buttons below slider cases
     // Slider cases end at y=745 (560 + 185)
@@ -425,10 +794,56 @@ void PluginEditor::resized()
     int buttonHeight = 40;
     int buttonSpacing = 15; // Space between buttons
     
-    // Center both buttons horizontally in the slider cases area (40, 415 wide)
+    // Position graphics button on the left (where it was with break CPU button)
     int totalWidth = buttonWidth * 2 + buttonSpacing;
     int startX = sliderCasesX + (415 - totalWidth) / 2;
     
     graphicsButton.setBounds (startX, buttonY, buttonWidth, buttonHeight);
-    breakCpuButton.setBounds (startX + buttonWidth + buttonSpacing, buttonY, buttonWidth, buttonHeight);
+}
+
+void PluginEditor::drawGainVisualization (juce::Graphics& g)
+{
+    // Get current gain value in dB
+    auto gainDB = static_cast<float>(masterGainSlider.getValue()); // -60dB to +6dB (with -60dB representing -infinity)
+    
+    // Use linear scale based on dB value
+    // For visualization: -60dB (representing -∞) = 0.0, +6dB = 1.0
+    float linearScale;
+    if (gainDB <= -60.0f)
+    {
+        linearScale = 0.0f; // -infinity shows as empty (no rectangle)
+    }
+    else
+    {
+        linearScale = (gainDB + 60.0f) / 66.0f; // Maps -60dB to 0.0, +6dB to 1.0 (66dB range)
+    }
+    
+    // Use bottom two-thirds of canvas for drawing area (match ADSR curve exactly)
+    auto canvasBounds = canvas.getBounds();
+    float drawX = canvasBounds.getX();
+    float drawY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f); // Start 1/3 down
+    float drawWidth = canvasBounds.getWidth();
+    float drawHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
+    
+    // Only draw rectangle if we have a meaningful gain level (not -infinity)
+    if (linearScale > 0.0f)
+    {
+        // Calculate rectangle height based on linear scale
+        float rectHeight = drawHeight * linearScale;
+        float rectY = drawY + drawHeight - rectHeight; // Start from bottom
+        
+        // Draw filled rectangle with gradient (match ADSR curve style)
+        auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
+        juce::ColourGradient gradient (colour.withAlpha(0.08f), drawX, rectY,
+                                       colour.withAlpha(0.02f), drawX, rectY + rectHeight, false);
+        g.setGradientFill (gradient);
+        g.fillRect (drawX, rectY, drawWidth, rectHeight);
+        
+        // Draw outline of the filled area (match ADSR curve style)
+        g.setColour (colour.withAlpha (0.15f));
+        g.drawRect (drawX, rectY, drawWidth, rectHeight, 1.5f);
+    }
+    
+    // Note: Gain value text is displayed by the general slider value system,
+    // so we don't draw it again here to avoid duplication
 }
