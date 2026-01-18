@@ -141,7 +141,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     sliderCasesCoverComponent = std::make_unique<ImageComponent>();
     sliderCasesCoverComponent->setImage(sliderCasesCoverImage);
     addAndMakeVisible(*sliderCasesCoverComponent);
-    sliderCasesCoverComponent->setBounds(10, 556, 480, 192);
+    sliderCasesCoverComponent->setBounds(10, 562, 480, 182);
     sliderCasesCoverComponent->setAlwaysOnTop(true);
     
     // Title Component

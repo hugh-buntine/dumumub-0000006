@@ -26,7 +26,7 @@ public:
         if (img.isValid())
         {
             g.drawImage(img, getLocalBounds().toFloat(), 
-                       juce::RectanglePlacement::fillDestination);
+                       juce::RectanglePlacement::stretchToFit);
         }
     }
     
