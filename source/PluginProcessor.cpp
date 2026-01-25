@@ -17,16 +17,8 @@ PluginProcessor::PluginProcessor()
                        ),
        apvts (*this, nullptr, "Parameters", createParameterLayout())
 {
-    // Initialize the logger
-    Logger::getInstance().initialize("dumumub-0000006.log", "dumumub-0000006 Plugin Logger");
-    LOG_INFO("PluginProcessor constructed");
-    
-    // Add listener for logging toggle parameter
-    apvts.addParameterListener("enableLogging", this);
-    
     // Initialize Hann window lookup table (shared by all particles)
     Particle::initializeHannTable();
-    LOG_INFO("Initialized Hann window lookup table");
     
     // Add child ValueTrees for mass points and spawn points if they don't exist
     // These will be automatically saved/restored with the APVTS state
@@ -47,15 +39,11 @@ PluginProcessor::PluginProcessor()
         massPoints.push_back({ juce::Point<float>(200.0f, 200.0f), 4.0f });
         spawnPoints.push_back({ juce::Point<float>(100.0f, 300.0f), 0.0f });
         savePointsToTree(); // Save defaults to tree
-        LOG_INFO("Brand new plugin - created defaults: 1 mass at (200,200), 1 spawn at (100,300)");
     }
 }
 
 PluginProcessor::~PluginProcessor()
 {
-    LOG_INFO("PluginProcessor destroyed");
-    apvts.removeParameterListener("enableLogging", this);
-    Logger::getInstance().shutdown();
 }
 
 //==============================================================================
@@ -158,13 +146,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
             else 
                 return juce::String (value, 1) + " dB"; 
         }
-    ));
-    
-    // Logging Toggle (boolean parameter)
-    layout.add (std::make_unique<juce::AudioParameterBool> (
-        "enableLogging",
-        "Enable Logging",
-        true  // Default to enabled
     ));
     
     return layout;
@@ -1156,12 +1137,7 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
 // AudioProcessorValueTreeState::Listener implementation
 void PluginProcessor::parameterChanged (const juce::String& parameterID, float newValue)
 {
-    if (parameterID == "enableLogging")
-    {
-        bool enabled = newValue > 0.5f; // Convert float to bool
-        Logger::getInstance().setLoggingEnabled(enabled);
-        LOG_INFO("Logging toggled via parameter - now " + juce::String(enabled ? "ENABLED" : "DISABLED"));
-    }
+    // No parameters currently need handling
 }
 
 //==============================================================================

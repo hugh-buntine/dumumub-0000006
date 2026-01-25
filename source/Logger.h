@@ -84,11 +84,11 @@ private:
     std::unique_ptr<juce::FileLogger> fileLogger;
     juce::File logFile;
     bool isInitialized = false;
-    bool loggingEnabled = true; // Logging enabled by default
+    bool loggingEnabled = false; // Logging permanently disabled
 };
 
-// Convenience macros for logging
-#define LOG_MESSAGE(msg) Logger::getInstance().logMessage(msg)
-#define LOG_INFO(msg) Logger::getInstance().logInfo(msg)
-#define LOG_WARNING(msg) Logger::getInstance().logWarning(msg)
-#define LOG_ERROR(msg) Logger::getInstance().logError(msg)
+// Convenience macros for logging - permanently disabled (no-op)
+#define LOG_MESSAGE(msg) ((void)0)
+#define LOG_INFO(msg) ((void)0)
+#define LOG_WARNING(msg) ((void)0)
+#define LOG_ERROR(msg) ((void)0)
