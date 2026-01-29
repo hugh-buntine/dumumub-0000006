@@ -134,6 +134,18 @@ jobs:
           dev-id-installer-cert: ${{ secrets.DEV_ID_INSTALLER_CERT }}
           dev-id-installer-password: ${{ secrets.DEV_ID_INSTALLER_PASSWORD }}
 
+      - name: Verify Certificates (macOS)
+        if: ${{ matrix.name == 'macOS' }}
+        run: |
+          echo "Checking available signing identities..."
+          security find-identity -v -p codesigning
+          echo ""
+          echo "Checking for Developer ID Application..."
+          security find-identity -v -p codesigning | grep "Developer ID Application"
+          echo ""
+          echo "Checking for Developer ID Installer..."
+          security find-identity -v -p codesigning | grep "Developer ID Installer"
+
       - name: Codesign (macOS)
         if: ${{ matrix.name == 'macOS' }}
         timeout-minutes: 5
@@ -165,7 +177,7 @@ jobs:
 
       - name: Create Package Installers
         if: ${{ matrix.name == 'macOS' }}
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           echo "Building individual plugin packages..."
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.au.pkg" --version $VERSION --component "${{ env.AU_PATH }}" --install-location "/Library/Audio/Plug-Ins/Components"  "packaging/${{ env.PRODUCT_NAME }}.au.pkg"
@@ -180,9 +192,20 @@ jobs:
           echo "Creating final product bundle..."
           cd packaging
           envsubst < distribution.xml.template > distribution.xml
-          productbuild --resources ./resources --distribution distribution.xml --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --timestamp "${{ env.ARTIFACT_NAME }}.pkg"
           
-          echo "Package created: ${{ env.ARTIFACT_NAME }}.pkg"
+          # Unlock keychain for signing (prevents hanging)
+          security unlock-keychain -p "${{ steps.keychain.outputs.keychain-password }}" "${{ steps.keychain.outputs.keychain }}"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${{ steps.keychain.outputs.keychain-password }}" "${{ steps.keychain.outputs.keychain }}"
+          
+          # Sign the product bundle
+          productbuild --resources ./resources \
+            --distribution distribution.xml \
+            --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" \
+            --timestamp \
+            --keychain "${{ steps.keychain.outputs.keychain }}" \
+            "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          echo "✅ Package created: ${{ env.ARTIFACT_NAME }}.pkg"
           ls -lh "${{ env.ARTIFACT_NAME }}.pkg"
 
       - name: Notarize Package
