@@ -235,25 +235,25 @@ jobs:
           cd packaging
           envsubst < distribution.xml.template > distribution.xml
           
-          # Unlock keychain and configure for non-interactive signing
-          KEYCHAIN="${{ steps.keychain.outputs.keychain-path }}"
-          KEYCHAIN_PASSWORD="${{ steps.keychain.outputs.keychain-password }}"
-          CERT_PASSWORD="${{ secrets.DEV_ID_INSTALLER_PASSWORD }}"
-          
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          
-          # Set partition list using the CERTIFICATE password (not keychain password)
-          # This is the password that protects the private key
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$CERT_PASSWORD" "$KEYCHAIN"
-          
-          # Sign the product bundle
+          # Create unsigned product bundle first
+          echo "Creating unsigned product bundle..."
           productbuild --resources ./resources \
             --distribution distribution.xml \
-            --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" \
+            "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
+          
+          # Sign the package (like codesign, this should work without keychain issues)
+          echo "Signing product bundle..."
+          productsign --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" \
             --timestamp \
-            --keychain "$KEYCHAIN" \
+            "${{ env.ARTIFACT_NAME }}-unsigned.pkg" \
             "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          # Verify signature
+          echo "Verifying signature..."
+          pkgutil --check-signature "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          # Clean up unsigned package
+          rm "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
           
           echo "✅ Package created: ${{ env.ARTIFACT_NAME }}.pkg"
           ls -lh "${{ env.ARTIFACT_NAME }}.pkg"
