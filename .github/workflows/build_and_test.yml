@@ -128,16 +128,23 @@ jobs:
         if: ${{ matrix.name == 'macOS' }}
         run: |
           echo "Checking if secrets are set..."
-          if [ -z "${{ secrets.DEV_ID_APP_CERT }}" ]; then
-            echo "❌ DEV_ID_APP_CERT is empty"
+          
+          APP_CERT_LEN=$(echo -n '${{ secrets.DEV_ID_APP_CERT }}' | wc -c)
+          INSTALLER_CERT_LEN=$(echo -n '${{ secrets.DEV_ID_INSTALLER_CERT }}' | wc -c)
+          
+          echo "DEV_ID_APP_CERT length: $APP_CERT_LEN"
+          echo "DEV_ID_INSTALLER_CERT length: $INSTALLER_CERT_LEN"
+          
+          if [ "$APP_CERT_LEN" -lt "1000" ]; then
+            echo "❌ DEV_ID_APP_CERT appears empty or too short (expected ~19800 chars)"
           else
-            echo "✅ DEV_ID_APP_CERT is set (${#DEV_ID_APP_CERT} chars)"
+            echo "✅ DEV_ID_APP_CERT looks good"
           fi
           
-          if [ -z "${{ secrets.DEV_ID_INSTALLER_CERT }}" ]; then
-            echo "❌ DEV_ID_INSTALLER_CERT is empty or not set"
+          if [ "$INSTALLER_CERT_LEN" -lt "1000" ]; then
+            echo "❌ DEV_ID_INSTALLER_CERT appears empty or too short (expected ~19800 chars)"
           else
-            echo "✅ DEV_ID_INSTALLER_CERT is set (length: $(echo -n '${{ secrets.DEV_ID_INSTALLER_CERT }}' | wc -c))"
+            echo "✅ DEV_ID_INSTALLER_CERT looks good"
           fi
 
       - name: Import Certificates (macOS)
@@ -156,29 +163,29 @@ jobs:
           echo "Checking available signing identities..."
           security find-identity -v -p codesigning
           echo ""
-          echo "Checking for Developer ID Application..."
-          if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
-            echo "✅ Developer ID Application found:"
-            security find-identity -v -p codesigning | grep "Developer ID Application"
-          else
-            echo "❌ Developer ID Application NOT found - certificate import failed"
-            echo "Check DEV_ID_APP_CERT and DEV_ID_APP_PASSWORD secrets"
-            echo "Expected: Developer ID Application: HUGH R BUNTINE (BHUCH3639C)"
-            exit 1
-          fi
+          
+          # Count each type
+          APP_COUNT=$(security find-identity -v -p codesigning | grep -c "Developer ID Application" || echo "0")
+          INSTALLER_COUNT=$(security find-identity -v -p codesigning | grep -c "Developer ID Installer" || echo "0")
+          
+          echo "Found $APP_COUNT Developer ID Application certificate(s)"
+          echo "Found $INSTALLER_COUNT Developer ID Installer certificate(s)"
           echo ""
-          echo "Checking for Developer ID Installer..."
-          if security find-identity -v -p codesigning | grep -q "Developer ID Installer"; then
-            echo "✅ Developer ID Installer found:"
-            security find-identity -v -p codesigning | grep "Developer ID Installer"
-          else
-            echo "❌ Developer ID Installer NOT found - certificate import failed"
-            echo "Check DEV_ID_INSTALLER_CERT and DEV_ID_INSTALLER_PASSWORD secrets"
-            echo "Expected: Developer ID Installer: HUGH R BUNTINE (BHUCH3639C)"
-            echo ""
-            echo "Debug: Checking what was imported..."
-            security find-identity -v -p codesigning | grep "HUGH R BUNTINE" || echo "No HUGH R BUNTINE certificates found"
+          
+          if [ "$APP_COUNT" -eq "0" ]; then
+            echo "❌ Developer ID Application NOT found"
+            echo "Check DEV_ID_APP_CERT and DEV_ID_APP_PASSWORD secrets"
             exit 1
+          else
+            echo "✅ Developer ID Application found"
+          fi
+          
+          if [ "$INSTALLER_COUNT" -eq "0" ]; then
+            echo "❌ Developer ID Installer NOT found"
+            echo "Check DEV_ID_INSTALLER_CERT and DEV_ID_INSTALLER_PASSWORD secrets"
+            exit 1
+          else
+            echo "✅ Developer ID Installer found"
           fi
 
       - name: Codesign (macOS)
