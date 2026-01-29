@@ -158,21 +158,26 @@ jobs:
           echo ""
           echo "Checking for Developer ID Application..."
           if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
-            echo "✅ Developer ID Application found"
+            echo "✅ Developer ID Application found:"
             security find-identity -v -p codesigning | grep "Developer ID Application"
           else
             echo "❌ Developer ID Application NOT found - certificate import failed"
             echo "Check DEV_ID_APP_CERT and DEV_ID_APP_PASSWORD secrets"
+            echo "Expected: Developer ID Application: HUGH R BUNTINE (BHUCH3639C)"
             exit 1
           fi
           echo ""
           echo "Checking for Developer ID Installer..."
           if security find-identity -v -p codesigning | grep -q "Developer ID Installer"; then
-            echo "✅ Developer ID Installer found"
+            echo "✅ Developer ID Installer found:"
             security find-identity -v -p codesigning | grep "Developer ID Installer"
           else
             echo "❌ Developer ID Installer NOT found - certificate import failed"
             echo "Check DEV_ID_INSTALLER_CERT and DEV_ID_INSTALLER_PASSWORD secrets"
+            echo "Expected: Developer ID Installer: HUGH R BUNTINE (BHUCH3639C)"
+            echo ""
+            echo "Debug: Checking what was imported..."
+            security find-identity -v -p codesigning | grep "HUGH R BUNTINE" || echo "No HUGH R BUNTINE certificates found"
             exit 1
           fi
 
