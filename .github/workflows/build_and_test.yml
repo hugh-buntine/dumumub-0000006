@@ -157,6 +157,13 @@ jobs:
           dev-id-installer-cert: ${{ secrets.DEV_ID_INSTALLER_CERT }}
           dev-id-installer-password: ${{ secrets.DEV_ID_INSTALLER_PASSWORD }}
 
+      - name: Fix Keychain Partition List (macOS)
+        if: ${{ matrix.name == 'macOS' }}
+        run: |
+          # The keychain action's partition list setup can fail silently
+          # Re-run with the certificate password to ensure productbuild can access keys
+          security set-key-partition-list -S apple-tool:,apple:,productbuild: -s -k "${{ secrets.DEV_ID_INSTALLER_PASSWORD }}" "${{ steps.keychain.outputs.keychain-path }}" 2>/dev/null || true
+
       - name: Verify Certificates (macOS)
         if: ${{ matrix.name == 'macOS' }}
         run: |
@@ -235,7 +242,11 @@ jobs:
           cd packaging
           envsubst < distribution.xml.template > distribution.xml
           
-          productbuild --resources ./resources --distribution distribution.xml --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --timestamp "${{ env.ARTIFACT_NAME }}.pkg"
+          # Create unsigned package first, then sign with productsign
+          # (productsign works like codesign and doesn't need partition list setup)
+          productbuild --resources ./resources --distribution distribution.xml "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
+          productsign --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --timestamp "${{ env.ARTIFACT_NAME }}-unsigned.pkg" "${{ env.ARTIFACT_NAME }}.pkg"
+          rm "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
           
           echo "✅ Package created: ${{ env.ARTIFACT_NAME }}.pkg"
           ls -lh "${{ env.ARTIFACT_NAME }}.pkg"
