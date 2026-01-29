@@ -141,10 +141,24 @@ jobs:
           security find-identity -v -p codesigning
           echo ""
           echo "Checking for Developer ID Application..."
-          security find-identity -v -p codesigning | grep "Developer ID Application"
+          if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
+            echo "✅ Developer ID Application found"
+            security find-identity -v -p codesigning | grep "Developer ID Application"
+          else
+            echo "❌ Developer ID Application NOT found - certificate import failed"
+            echo "Check DEV_ID_APP_CERT and DEV_ID_APP_PASSWORD secrets"
+            exit 1
+          fi
           echo ""
           echo "Checking for Developer ID Installer..."
-          security find-identity -v -p codesigning | grep "Developer ID Installer"
+          if security find-identity -v -p codesigning | grep -q "Developer ID Installer"; then
+            echo "✅ Developer ID Installer found"
+            security find-identity -v -p codesigning | grep "Developer ID Installer"
+          else
+            echo "❌ Developer ID Installer NOT found - certificate import failed"
+            echo "Check DEV_ID_INSTALLER_CERT and DEV_ID_INSTALLER_PASSWORD secrets"
+            exit 1
+          fi
 
       - name: Codesign (macOS)
         if: ${{ matrix.name == 'macOS' }}
