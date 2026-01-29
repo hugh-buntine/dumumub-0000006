@@ -238,15 +238,14 @@ jobs:
           # Unlock keychain and configure for non-interactive signing
           KEYCHAIN="${{ steps.keychain.outputs.keychain-path }}"
           KEYCHAIN_PASSWORD="${{ steps.keychain.outputs.keychain-password }}"
+          CERT_PASSWORD="${{ secrets.DEV_ID_INSTALLER_PASSWORD }}"
           
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           
-          # Allow partition list access (required for productbuild)
-          # Using keychain password since the action already imported certs with it
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" || {
-            echo "Warning: set-key-partition-list failed, trying to continue anyway..."
-          }
+          # Set partition list using the CERTIFICATE password (not keychain password)
+          # This is the password that protects the private key
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$CERT_PASSWORD" "$KEYCHAIN"
           
           # Sign the product bundle
           productbuild --resources ./resources \
