@@ -165,12 +165,11 @@ jobs:
           CERT_TEMP=$(mktemp)
           echo '${{ secrets.DEV_ID_INSTALLER_CERT }}' | base64 -d > "$CERT_TEMP"
           
-          # Delete and re-import with -A flag (allow all apps to access)
-          security import "$CERT_TEMP" -f pkcs12 -k "$KEYCHAIN" -P "${{ secrets.DEV_ID_INSTALLER_PASSWORD }}" -A
+          # Import with -A flag (allow all apps to access) and -T for specific tools
+          security import "$CERT_TEMP" -f pkcs12 -k "$KEYCHAIN" -P "${{ secrets.DEV_ID_INSTALLER_PASSWORD }}" -A -T /usr/bin/productsign -T /usr/bin/productbuild -T /usr/bin/codesign -T /usr/bin/security
           rm "$CERT_TEMP"
           
-          # Set partition list with keychain password (from action output)
-          security set-key-partition-list -S apple-tool:,apple: -s -k "${{ steps.keychain.outputs.keychain-password }}" "$KEYCHAIN"
+          echo "Cert imported with -A flag, skipping partition list setup"
 
       - name: Verify Certificates (macOS)
         if: ${{ matrix.name == 'macOS' }}
