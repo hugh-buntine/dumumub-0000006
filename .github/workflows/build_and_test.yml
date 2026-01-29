@@ -235,11 +235,16 @@ jobs:
           cd packaging
           envsubst < distribution.xml.template > distribution.xml
           
-          # Sign the product bundle (keychain action already set up access)
+          # Unlock keychain and allow codesign tools to access it without prompting
+          security unlock-keychain -p "${{ steps.keychain.outputs.keychain-password }}" "${{ steps.keychain.outputs.keychain-path }}"
+          security set-keychain-settings -lut 21600 "${{ steps.keychain.outputs.keychain-path }}"
+          
+          # Sign the product bundle
           productbuild --resources ./resources \
             --distribution distribution.xml \
             --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" \
             --timestamp \
+            --keychain "${{ steps.keychain.outputs.keychain-path }}" \
             "${{ env.ARTIFACT_NAME }}.pkg"
           
           echo "✅ Package created: ${{ env.ARTIFACT_NAME }}.pkg"
