@@ -157,12 +157,20 @@ jobs:
           dev-id-installer-cert: ${{ secrets.DEV_ID_INSTALLER_CERT }}
           dev-id-installer-password: ${{ secrets.DEV_ID_INSTALLER_PASSWORD }}
 
-      - name: Fix Keychain Partition List (macOS)
+      - name: Fix Installer Cert Access (macOS)
         if: ${{ matrix.name == 'macOS' }}
         run: |
-          # The keychain action's partition list setup can fail silently
-          # Re-run with the certificate password to ensure productbuild can access keys
-          security set-key-partition-list -S apple-tool:,apple:,productbuild: -s -k "${{ secrets.DEV_ID_INSTALLER_PASSWORD }}" "${{ steps.keychain.outputs.keychain-path }}" 2>/dev/null || true
+          # Re-import installer cert with explicit access for signing tools
+          KEYCHAIN="${{ steps.keychain.outputs.keychain-path }}"
+          CERT_TEMP=$(mktemp)
+          echo '${{ secrets.DEV_ID_INSTALLER_CERT }}' | base64 -d > "$CERT_TEMP"
+          
+          # Delete and re-import with -A flag (allow all apps to access)
+          security import "$CERT_TEMP" -f pkcs12 -k "$KEYCHAIN" -P "${{ secrets.DEV_ID_INSTALLER_PASSWORD }}" -A
+          rm "$CERT_TEMP"
+          
+          # Set partition list with keychain password (from action output)
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${{ steps.keychain.outputs.keychain-password }}" "$KEYCHAIN"
 
       - name: Verify Certificates (macOS)
         if: ${{ matrix.name == 'macOS' }}
@@ -243,9 +251,10 @@ jobs:
           envsubst < distribution.xml.template > distribution.xml
           
           # Create unsigned package first, then sign with productsign
-          # (productsign works like codesign and doesn't need partition list setup)
           productbuild --resources ./resources --distribution distribution.xml "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
-          productsign --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --timestamp "${{ env.ARTIFACT_NAME }}-unsigned.pkg" "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          # Use keychain explicitly for productsign
+          productsign --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --keychain "${{ steps.keychain.outputs.keychain-path }}" --timestamp "${{ env.ARTIFACT_NAME }}-unsigned.pkg" "${{ env.ARTIFACT_NAME }}.pkg"
           rm "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
           
           echo "✅ Package created: ${{ env.ARTIFACT_NAME }}.pkg"
