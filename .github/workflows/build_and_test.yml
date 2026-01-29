@@ -124,6 +124,22 @@ jobs:
           7z x pluginval_${{ matrix.name }}.zip
           ${{ matrix.pluginval-binary }} --strictness-level 10 --verbose --validate "${{ env.VST3_PATH }}"
 
+      - name: Debug Secrets (macOS)
+        if: ${{ matrix.name == 'macOS' }}
+        run: |
+          echo "Checking if secrets are set..."
+          if [ -z "${{ secrets.DEV_ID_APP_CERT }}" ]; then
+            echo "❌ DEV_ID_APP_CERT is empty"
+          else
+            echo "✅ DEV_ID_APP_CERT is set (${#DEV_ID_APP_CERT} chars)"
+          fi
+          
+          if [ -z "${{ secrets.DEV_ID_INSTALLER_CERT }}" ]; then
+            echo "❌ DEV_ID_INSTALLER_CERT is empty or not set"
+          else
+            echo "✅ DEV_ID_INSTALLER_CERT is set (length: $(echo -n '${{ secrets.DEV_ID_INSTALLER_CERT }}' | wc -c))"
+          fi
+
       - name: Import Certificates (macOS)
         uses: sudara/basic-macos-keychain-action@v1
         id: keychain
