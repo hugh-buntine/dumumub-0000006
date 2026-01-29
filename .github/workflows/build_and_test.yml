@@ -163,10 +163,11 @@ jobs:
           SetFile -a C "${{ env.AU_PATH }}"
           SetFile -a C "${{ env.CLAP_PATH }}"
 
-      - name: pkgbuild, Productbuild and Notarize
+      - name: Create Package Installers
         if: ${{ matrix.name == 'macOS' }}
-        timeout-minutes: 20
+        timeout-minutes: 5
         run: |
+          echo "Building individual plugin packages..."
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.au.pkg" --version $VERSION --component "${{ env.AU_PATH }}" --install-location "/Library/Audio/Plug-Ins/Components"  "packaging/${{ env.PRODUCT_NAME }}.au.pkg"
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.vst3.pkg" --version $VERSION --component "${{ env.VST3_PATH }}" --install-location "/Library/Audio/Plug-Ins/VST3" "packaging/${{ env.PRODUCT_NAME }}.vst3.pkg"
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.clap.pkg" --version $VERSION --component "${{ env.CLAP_PATH }}" --install-location "/Library/Audio/Plug-Ins/CLAP" "packaging/${{ env.PRODUCT_NAME }}.clap.pkg"
@@ -176,12 +177,41 @@ jobs:
           plutil -replace BundleIsRelocatable -bool NO standalone.plist
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.app.pkg" --version $VERSION --root "$(dirname "${{ env.STANDALONE_PATH }}")" --component-plist standalone.plist --install-location "/Applications" "packaging/${{ env.PRODUCT_NAME }}.app.pkg"
 
+          echo "Creating final product bundle..."
           cd packaging
           envsubst < distribution.xml.template > distribution.xml
           productbuild --resources ./resources --distribution distribution.xml --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --timestamp "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          echo "Package created: ${{ env.ARTIFACT_NAME }}.pkg"
+          ls -lh "${{ env.ARTIFACT_NAME }}.pkg"
 
-          xcrun notarytool submit "${{ env.ARTIFACT_NAME }}.pkg" --apple-id ${{ secrets.NOTARIZATION_USERNAME }} --password ${{ secrets.NOTARIZATION_PASSWORD }} --team-id ${{ secrets.TEAM_ID }} --wait
+      - name: Notarize Package
+        if: ${{ matrix.name == 'macOS' }}
+        timeout-minutes: 30
+        run: |
+          cd packaging
+          echo "Submitting ${{ env.ARTIFACT_NAME }}.pkg for notarization..."
+          echo "This may take 10-20 minutes on first submission..."
+          
+          # Submit and capture the output
+          xcrun notarytool submit "${{ env.ARTIFACT_NAME }}.pkg" \
+            --apple-id ${{ secrets.NOTARIZATION_USERNAME }} \
+            --password ${{ secrets.NOTARIZATION_PASSWORD }} \
+            --team-id ${{ secrets.TEAM_ID }} \
+            --wait \
+            --timeout 30m \
+            --verbose || {
+              echo "❌ Notarization failed or timed out"
+              echo "Checking notarization history..."
+              xcrun notarytool history --apple-id ${{ secrets.NOTARIZATION_USERNAME }} --password ${{ secrets.NOTARIZATION_PASSWORD }} --team-id ${{ secrets.TEAM_ID }}
+              exit 1
+            }
+          
+          echo "✅ Notarization complete! Stapling ticket..."
           xcrun stapler staple "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          echo "✅ Package is ready for distribution!"
+          xcrun stapler validate "${{ env.ARTIFACT_NAME }}.pkg"
 
       - name: Zip
         if: ${{ matrix.name == 'Linux' }}
