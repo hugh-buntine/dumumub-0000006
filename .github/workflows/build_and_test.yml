@@ -235,16 +235,11 @@ jobs:
           cd packaging
           envsubst < distribution.xml.template > distribution.xml
           
-          # Unlock keychain for signing (prevents hanging)
-          security unlock-keychain -p "${{ steps.keychain.outputs.keychain-password }}" "${{ steps.keychain.outputs.keychain-path }}"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "${{ steps.keychain.outputs.keychain-password }}" "${{ steps.keychain.outputs.keychain-path }}"
-          
-          # Sign the product bundle
+          # Sign the product bundle (keychain action already set up access)
           productbuild --resources ./resources \
             --distribution distribution.xml \
             --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" \
             --timestamp \
-            --keychain "${{ steps.keychain.outputs.keychain-path }}" \
             "${{ env.ARTIFACT_NAME }}.pkg"
           
           echo "✅ Package created: ${{ env.ARTIFACT_NAME }}.pkg"
