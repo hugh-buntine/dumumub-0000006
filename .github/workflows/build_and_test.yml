@@ -124,6 +124,29 @@ jobs:
           7z x pluginval_${{ matrix.name }}.zip
           ${{ matrix.pluginval-binary }} --strictness-level 10 --verbose --validate "${{ env.VST3_PATH }}"
 
+      - name: Debug Secrets (macOS)
+        if: ${{ matrix.name == 'macOS' }}
+        run: |
+          echo "Checking if secrets are set..."
+          
+          APP_CERT_LEN=$(echo -n '${{ secrets.DEV_ID_APP_CERT }}' | wc -c)
+          INSTALLER_CERT_LEN=$(echo -n '${{ secrets.DEV_ID_INSTALLER_CERT }}' | wc -c)
+          
+          echo "DEV_ID_APP_CERT length: $APP_CERT_LEN"
+          echo "DEV_ID_INSTALLER_CERT length: $INSTALLER_CERT_LEN"
+          
+          if [ "$APP_CERT_LEN" -lt "1000" ]; then
+            echo "❌ DEV_ID_APP_CERT appears empty or too short (expected ~19800 chars)"
+          else
+            echo "✅ DEV_ID_APP_CERT looks good"
+          fi
+          
+          if [ "$INSTALLER_CERT_LEN" -lt "1000" ]; then
+            echo "❌ DEV_ID_INSTALLER_CERT appears empty or too short (expected ~19800 chars)"
+          else
+            echo "✅ DEV_ID_INSTALLER_CERT looks good"
+          fi
+
       - name: Import Certificates (macOS)
         uses: sudara/basic-macos-keychain-action@v1
         id: keychain
@@ -133,6 +156,51 @@ jobs:
           dev-id-app-password: ${{ secrets.DEV_ID_APP_PASSWORD }}
           dev-id-installer-cert: ${{ secrets.DEV_ID_INSTALLER_CERT }}
           dev-id-installer-password: ${{ secrets.DEV_ID_INSTALLER_PASSWORD }}
+
+      - name: Fix Installer Cert Access (macOS)
+        if: ${{ matrix.name == 'macOS' }}
+        run: |
+          # Re-import installer cert with explicit access for signing tools
+          KEYCHAIN="${{ steps.keychain.outputs.keychain-path }}"
+          CERT_TEMP=$(mktemp)
+          echo '${{ secrets.DEV_ID_INSTALLER_CERT }}' | base64 -d > "$CERT_TEMP"
+          
+          # Import with -A flag (allow all apps to access) and -T for specific tools
+          security import "$CERT_TEMP" -f pkcs12 -k "$KEYCHAIN" -P "${{ secrets.DEV_ID_INSTALLER_PASSWORD }}" -A -T /usr/bin/productsign -T /usr/bin/productbuild -T /usr/bin/codesign -T /usr/bin/security
+          rm "$CERT_TEMP"
+          
+          echo "Cert imported with -A flag, skipping partition list setup"
+
+      - name: Verify Certificates (macOS)
+        if: ${{ matrix.name == 'macOS' }}
+        run: |
+          echo "Checking available signing identities..."
+          security find-identity -v -p codesigning
+          echo ""
+          
+          # Count each type
+          APP_COUNT=$(security find-identity -v -p codesigning | grep -c "Developer ID Application" || echo "0")
+          INSTALLER_COUNT=$(security find-identity -v -p codesigning | grep -c "Developer ID Installer" || echo "0")
+          
+          echo "Found $APP_COUNT Developer ID Application certificate(s)"
+          echo "Found $INSTALLER_COUNT Developer ID Installer certificate(s)"
+          echo ""
+          
+          if [ "$APP_COUNT" -eq "0" ]; then
+            echo "❌ Developer ID Application NOT found"
+            echo "Check DEV_ID_APP_CERT and DEV_ID_APP_PASSWORD secrets"
+            exit 1
+          else
+            echo "✅ Developer ID Application found"
+          fi
+          
+          if [ "$INSTALLER_COUNT" -eq "0" ]; then
+            echo "❌ Developer ID Installer NOT found"
+            echo "Check DEV_ID_INSTALLER_CERT and DEV_ID_INSTALLER_PASSWORD secrets"
+            exit 1
+          else
+            echo "✅ Developer ID Installer found"
+          fi
 
       - name: Codesign (macOS)
         if: ${{ matrix.name == 'macOS' }}
@@ -163,10 +231,11 @@ jobs:
           SetFile -a C "${{ env.AU_PATH }}"
           SetFile -a C "${{ env.CLAP_PATH }}"
 
-      - name: pkgbuild, Productbuild and Notarize
+      - name: Create Package Installers
         if: ${{ matrix.name == 'macOS' }}
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
+          echo "Building individual plugin packages..."
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.au.pkg" --version $VERSION --component "${{ env.AU_PATH }}" --install-location "/Library/Audio/Plug-Ins/Components"  "packaging/${{ env.PRODUCT_NAME }}.au.pkg"
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.vst3.pkg" --version $VERSION --component "${{ env.VST3_PATH }}" --install-location "/Library/Audio/Plug-Ins/VST3" "packaging/${{ env.PRODUCT_NAME }}.vst3.pkg"
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.clap.pkg" --version $VERSION --component "${{ env.CLAP_PATH }}" --install-location "/Library/Audio/Plug-Ins/CLAP" "packaging/${{ env.PRODUCT_NAME }}.clap.pkg"
@@ -176,12 +245,47 @@ jobs:
           plutil -replace BundleIsRelocatable -bool NO standalone.plist
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.app.pkg" --version $VERSION --root "$(dirname "${{ env.STANDALONE_PATH }}")" --component-plist standalone.plist --install-location "/Applications" "packaging/${{ env.PRODUCT_NAME }}.app.pkg"
 
+          echo "Creating final product bundle..."
           cd packaging
           envsubst < distribution.xml.template > distribution.xml
-          productbuild --resources ./resources --distribution distribution.xml --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --timestamp "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          # Create unsigned package first, then sign with productsign
+          productbuild --resources ./resources --distribution distribution.xml "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
+          
+          # Use keychain explicitly for productsign
+          productsign --sign "${{ secrets.DEVELOPER_ID_INSTALLER }}" --keychain "${{ steps.keychain.outputs.keychain-path }}" --timestamp "${{ env.ARTIFACT_NAME }}-unsigned.pkg" "${{ env.ARTIFACT_NAME }}.pkg"
+          rm "${{ env.ARTIFACT_NAME }}-unsigned.pkg"
+          
+          echo "✅ Package created: ${{ env.ARTIFACT_NAME }}.pkg"
+          ls -lh "${{ env.ARTIFACT_NAME }}.pkg"
 
-          xcrun notarytool submit "${{ env.ARTIFACT_NAME }}.pkg" --apple-id ${{ secrets.NOTARIZATION_USERNAME }} --password ${{ secrets.NOTARIZATION_PASSWORD }} --team-id ${{ secrets.TEAM_ID }} --wait
+      - name: Notarize Package
+        if: ${{ matrix.name == 'macOS' }}
+        timeout-minutes: 30
+        run: |
+          cd packaging
+          echo "Submitting ${{ env.ARTIFACT_NAME }}.pkg for notarization..."
+          echo "This may take 10-20 minutes on first submission..."
+          
+          # Submit and capture the output
+          xcrun notarytool submit "${{ env.ARTIFACT_NAME }}.pkg" \
+            --apple-id ${{ secrets.NOTARIZATION_USERNAME }} \
+            --password ${{ secrets.NOTARIZATION_PASSWORD }} \
+            --team-id ${{ secrets.TEAM_ID }} \
+            --wait \
+            --timeout 30m \
+            --verbose || {
+              echo "❌ Notarization failed or timed out"
+              echo "Checking notarization history..."
+              xcrun notarytool history --apple-id ${{ secrets.NOTARIZATION_USERNAME }} --password ${{ secrets.NOTARIZATION_PASSWORD }} --team-id ${{ secrets.TEAM_ID }}
+              exit 1
+            }
+          
+          echo "✅ Notarization complete! Stapling ticket..."
           xcrun stapler staple "${{ env.ARTIFACT_NAME }}.pkg"
+          
+          echo "✅ Package is ready for distribution!"
+          xcrun stapler validate "${{ env.ARTIFACT_NAME }}.pkg"
 
       - name: Zip
         if: ${{ matrix.name == 'Linux' }}
@@ -194,31 +298,19 @@ jobs:
           iscc "packaging\installer.iss"
           mv "packaging/Output/${{ env.ARTIFACT_NAME }}.exe" "${{ env.ARTIFACTS_PATH }}/"
 
-      - name: Codesign with Azure Trusted Signing
-        if: ${{ matrix.name == 'Windows' }}
-        uses: azure/trusted-signing-action@v0.5.1
-        with:
-          # The Azure Active Directory tenant (directory) ID.
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-
-          # The client (application) ID of an App Registration in the tenant.
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-
-          # A client secret that was generated for the App Registration.
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-
-          # The Code Signing Account endpoint. The URI value must have a URI that aligns to the region your Code Signing Account and Certificate Profile you are specifying were created in during the setup of these resources.
-          endpoint: ${{ secrets.AZURE_ENDPOINT }}
-
-          # The Code Signing Account name.
-          trusted-signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
-
-          # The Certificate Profile name.
-          certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
-
-          # This signs all exes inside the folder
-          files-folder: ${{ env.ARTIFACTS_PATH }}
-          files-folder-filter: exe
+      # Windows code signing disabled - installer will be unsigned
+      # - name: Codesign with Azure Trusted Signing
+      #   if: ${{ matrix.name == 'Windows' }}
+      #   uses: azure/trusted-signing-action@v0.5.1
+      #   with:
+      #     azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      #     endpoint: ${{ secrets.AZURE_ENDPOINT }}
+      #     trusted-signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+      #     certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
+      #     files-folder: ${{ env.ARTIFACTS_PATH }}
+      #     files-folder-filter: exe
 
       - name: Upload Exe (Windows)
         if: ${{ matrix.name == 'Windows' }}
