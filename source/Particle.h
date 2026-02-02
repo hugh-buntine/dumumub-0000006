@@ -122,9 +122,6 @@ public:
     
     // Draw the particle
     void draw (juce::Graphics& g);
-    
-    // OPTIMIZATION: Update trail in GUI thread only (not audio thread)
-    void updateTrailForRendering (float deltaTime);
 
 private:
     juce::Point<float> position;

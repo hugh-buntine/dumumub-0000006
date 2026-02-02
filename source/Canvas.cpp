@@ -737,12 +737,8 @@ void Canvas::drawParticles (juce::Graphics& g)
     auto& particlesLock = audioProcessor.getParticlesLock();
     const juce::ScopedLock lock (particlesLock);
     
-    // OPTIMIZATION: Update trails in GUI thread only (not audio thread)
-    float deltaTime = 1.0f / 60.0f; // Assume 60 FPS for trail updates
-    
     for (auto* particle : *processorParticles)
     {
-        particle->updateTrailForRendering (deltaTime);
         particle->draw (g);
     }
 }
