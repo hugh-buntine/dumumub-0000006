@@ -1,6 +1,3 @@
-# Navigate to project
-cd "/Users/hughbuntine/Desktop/DUMUMUB/DUMUMUB PLUGINS/dumumub-0000006"
-
 # Quick test/dev
 ./run.sh
 

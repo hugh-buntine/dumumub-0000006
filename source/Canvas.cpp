@@ -699,14 +699,6 @@ void Canvas::timerCallback()
     auto* processorParticles = audioProcessor.getParticles();
     const bool hasParticles = !processorParticles->isEmpty();
     
-    // If graphics disabled, slow down to 1 FPS (only update UI occasionally)
-    if (!graphicsEnabled)
-    {
-        if (getTimerInterval() != 1000)  // Only change if not already at 1 FPS
-            startTimer(1000);  // 1 FPS when graphics off
-        return;  // Skip all graphics updates
-    }
-    
     // If no particles, slow down the timer to 5 FPS to save CPU
     if (!hasParticles)
     {
@@ -741,10 +733,6 @@ void Canvas::timerCallback()
 
 void Canvas::drawParticles (juce::Graphics& g)
 {
-    // Skip particle rendering if graphics disabled
-    if (!graphicsEnabled)
-        return;
-        
     auto* processorParticles = audioProcessor.getParticles();
     auto& particlesLock = audioProcessor.getParticlesLock();
     const juce::ScopedLock lock (particlesLock);
@@ -767,43 +755,7 @@ void Canvas::drawWaveform (juce::Graphics& g)
     const int canvasHeight = getHeight();
     const int canvasWidth = getWidth();
     
-    // When graphics disabled, draw simple waveform without glow effects
-    if (!graphicsEnabled)
-    {
-        const float fixedOpacity = 0.3f;  // Low opacity when graphics off
-        
-        for (int y = 0; y < canvasHeight; y += 4)
-        {
-            // Map y position to sample position (bottom = start, top = end)
-            float normalizedPosition = 1.0f - (static_cast<float>(y) / canvasHeight);
-            int sampleIndex = static_cast<int>(normalizedPosition * audioBuffer->getNumSamples());
-            sampleIndex = juce::jlimit (0, audioBuffer->getNumSamples() - 1, sampleIndex);
-            
-            // Get average magnitude across all channels at this sample
-            float magnitude = 0.0f;
-            for (int channel = 0; channel < audioBuffer->getNumChannels(); ++channel)
-            {
-                magnitude += std::abs (audioBuffer->getSample (channel, sampleIndex));
-            }
-            magnitude /= audioBuffer->getNumChannels();
-            
-            // Scale magnitude to line width
-            float lineHalfWidth = magnitude * (canvasWidth * 0.4f);
-            float centerX = canvasWidth / 2.0f;
-            
-            if (lineHalfWidth < 0.5f)
-                continue;
-                
-            // Draw simple line without gradient
-            g.setColour (juce::Colour(0xFF, 0xFF, 0xF2).withAlpha(fixedOpacity));
-            g.drawLine(centerX - lineHalfWidth, static_cast<float>(y),
-                       centerX + lineHalfWidth, static_cast<float>(y),
-                       1.0f);
-        }
-        return;
-    }
-    
-    // Graphics enabled - draw with full glow effects
+    // Draw waveform with glow effects based on particle positions
     const float minOpacity = 0.1f;  // Base opacity when no particles
     const float maxOpacity = 1.0f;   // Max opacity when particle is at edge
     const float influenceRadius = 30.0f; // How far from a particle affects the waveform
