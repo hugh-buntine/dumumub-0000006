@@ -15,7 +15,7 @@ TEST_CASE ("Plugin instance", "[instance]")
     SECTION ("name")
     {
         CHECK_THAT (testPlugin.getName().toStdString(),
-            Catch::Matchers::Equals ("dumumub-0000006"));
+            Catch::Matchers::Equals ("orbit"));
     }
 }
 

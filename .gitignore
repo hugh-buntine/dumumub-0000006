@@ -14,6 +14,17 @@ _deps
 logs/
 *.log
 
+# Video files (use .gif versions instead)
+*.mov
+
+# Secrets and sensitive information
+SECRETS.txt
+
+# Certificate export files (contain private keys)
+*.p12
+DeveloperIDApplication.txt
+DeveloperIDInstaller.txt
+
 # Build directories (contains large binary files)
 build/
 Build/
