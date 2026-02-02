@@ -25,7 +25,7 @@ set(PROJECT_NAME "dumumub-0000006")
 #   set(PROJECT_NAME "MyPlugin_v${MAJOR_VERSION}")
 # Doing so enables major versions to show up in IDEs and DAWs as separate plugins
 # allowing you to change parameters and behavior without breaking existing user projects
-set(PRODUCT_NAME "dumumub-0000006")
+set(PRODUCT_NAME "orbit")
 
 # Change me! Used for the MacOS bundle name and Installers
 set(COMPANY_NAME "dumumub")
