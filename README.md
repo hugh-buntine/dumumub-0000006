@@ -2,7 +2,7 @@
 
 ![Plugin Interface](https://img.shields.io/badge/JUCE-Audio%20Plugin-blue)
 ![Language](https://img.shields.io/badge/C++-17-red)
-![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-green)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-green)
 ![Status](https://img.shields.io/badge/Status-Complete-brightgreen)
 
 A granular synthesizer audio plugin built with JUCE framework, featuring physics-based orbital grain movement, interactive 2D canvas editing, and real-time MIDI-triggered grain emission.
