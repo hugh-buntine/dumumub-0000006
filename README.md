@@ -5,9 +5,9 @@
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-green)
 ![Status](https://img.shields.io/badge/Status-Complete-brightgreen)
 
-[![Download](https://img.shields.io/badge/Download-dumumub.com-orange?style=for-the-badge)](https://dumumub.com)
-
 A granular synthesizer audio plugin built with JUCE framework, featuring physics-based orbital grain movement, interactive 2D canvas editing, and real-time MIDI-triggered grain emission.
+
+[![Download](https://img.shields.io/badge/Download-dumumub.com-orange?style=for-the-badge)](https://dumumub.com)
 
 ## Plugin Interface
 
