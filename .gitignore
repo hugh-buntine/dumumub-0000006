@@ -14,6 +14,9 @@ _deps
 logs/
 *.log
 
+# Video files (use .gif versions instead)
+*.mov
+
 # Secrets and sensitive information
 SECRETS.txt
 
