@@ -17,28 +17,22 @@ PluginProcessor::PluginProcessor()
                        ),
        apvts (*this, nullptr, "Parameters", createParameterLayout())
 {
-    // Initialize Hann window lookup table (shared by all particles)
     Particle::initializeHannTable();
     
-    // Add child ValueTrees for mass points and spawn points if they don't exist
-    // These will be automatically saved/restored with the APVTS state
     auto& state = apvts.state;
     if (!state.getChildWithName("MassPoints").isValid())
         state.appendChild(juce::ValueTree("MassPoints"), nullptr);
     if (!state.getChildWithName("SpawnPoints").isValid())
         state.appendChild(juce::ValueTree("SpawnPoints"), nullptr);
     
-    // Load mass points and spawn points from the tree
     loadPointsFromTree();
     
-    // If this is a brand new plugin (no points in tree), create defaults
-    // Otherwise, use whatever was saved (even if 0 points)
+    // Create defaults for fresh plugin (no saved state)
     if (massPoints.empty() && spawnPoints.empty())
     {
-        // Create default configuration for fresh plugin
         massPoints.push_back({ juce::Point<float>(200.0f, 200.0f), 4.0f });
         spawnPoints.push_back({ juce::Point<float>(100.0f, 300.0f), 0.0f });
-        savePointsToTree(); // Save defaults to tree
+        savePointsToTree();
     }
 }
 
@@ -219,28 +213,18 @@ void PluginProcessor::changeProgramName (int index, const juce::String& newName)
 //==============================================================================
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
     juce::ignoreUnused (sampleRate, samplesPerBlock);
-    
-    LOG_INFO("prepareToPlay called - Sample Rate: " + juce::String(sampleRate) + 
-             " Hz, Buffer Size: " + juce::String(samplesPerBlock) + " samples");
 }
 
 void PluginProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
 }
 
 //==============================================================================
-// Helper functions to sync mass/spawn points between arrays and ValueTree
-
 void PluginProcessor::loadPointsFromTree()
 {
     auto& state = apvts.state;
     
-    // Load mass points
     auto massPointsTree = state.getChildWithName("MassPoints");
     if (massPointsTree.isValid())
     {
@@ -254,10 +238,8 @@ void PluginProcessor::loadPointsFromTree()
             mp.massMultiplier = child.getProperty("mass", 4.0f);
             massPoints.push_back(mp);
         }
-        LOG_INFO("Loaded " + juce::String(massPoints.size()) + " mass points from tree");
     }
     
-    // Load spawn points
     auto spawnPointsTree = state.getChildWithName("SpawnPoints");
     if (spawnPointsTree.isValid())
     {
@@ -271,7 +253,6 @@ void PluginProcessor::loadPointsFromTree()
             sp.momentumAngle = child.getProperty("angle", 0.0f);
             spawnPoints.push_back(sp);
         }
-        LOG_INFO("Loaded " + juce::String(spawnPoints.size()) + " spawn points from tree");
     }
 }
 
@@ -279,7 +260,6 @@ void PluginProcessor::savePointsToTree()
 {
     auto& state = apvts.state;
     
-    // Save mass points
     auto massPointsTree = state.getOrCreateChildWithName("MassPoints", nullptr);
     massPointsTree.removeAllChildren(nullptr);
     for (const auto& mp : massPoints)
@@ -291,7 +271,6 @@ void PluginProcessor::savePointsToTree()
         massPointsTree.appendChild(child, nullptr);
     }
     
-    // Save spawn points
     auto spawnPointsTree = state.getOrCreateChildWithName("SpawnPoints", nullptr);
     spawnPointsTree.removeAllChildren(nullptr);
     for (const auto& sp : spawnPoints)
@@ -302,23 +281,17 @@ void PluginProcessor::savePointsToTree()
         child.setProperty("angle", sp.momentumAngle, nullptr);
         spawnPointsTree.appendChild(child, nullptr);
     }
-    
-    LOG_INFO("Saved " + juce::String(massPoints.size()) + " mass points, " + 
-             juce::String(spawnPoints.size()) + " spawn points to tree");
 }
 
 //==============================================================================
-// Mass and spawn point management
-
 void PluginProcessor::updateMassPoint (int index, juce::Point<float> position, float massMultiplier)
 {
     if (index >= 0 && index < static_cast<int>(massPoints.size()))
     {
         massPoints[static_cast<size_t>(index)].position = position;
         massPoints[static_cast<size_t>(index)].massMultiplier = massMultiplier;
-        LOG_INFO("Updated mass point " + juce::String(index) + " to (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ")");
-        savePointsToTree(); // Sync to ValueTree
-        updateHostDisplay(); // Notify DAW that state has changed
+        savePointsToTree();
+        updateHostDisplay();
     }
 }
 
@@ -328,9 +301,8 @@ void PluginProcessor::addMassPoint (juce::Point<float> position, float massMulti
     data.position = position;
     data.massMultiplier = massMultiplier;
     massPoints.push_back (data);
-    LOG_INFO("Added mass point at (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ") - Total: " + juce::String(massPoints.size()));
-    savePointsToTree(); // Sync to ValueTree
-    updateHostDisplay(); // Notify DAW that state has changed
+    savePointsToTree();
+    updateHostDisplay();
 }
 
 void PluginProcessor::removeMassPoint (int index)
@@ -338,8 +310,8 @@ void PluginProcessor::removeMassPoint (int index)
     if (index >= 0 && index < static_cast<int>(massPoints.size()))
     {
         massPoints.erase (massPoints.begin() + index);
-        savePointsToTree(); // Sync to ValueTree
-        updateHostDisplay(); // Notify DAW that state has changed
+        savePointsToTree();
+        updateHostDisplay();
     }
 }
 
@@ -349,9 +321,8 @@ void PluginProcessor::updateSpawnPoint (int index, juce::Point<float> position, 
     {
         spawnPoints[static_cast<size_t>(index)].position = position;
         spawnPoints[static_cast<size_t>(index)].momentumAngle = angle;
-        LOG_INFO("Updated spawn point " + juce::String(index) + " to (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ") angle: " + juce::String(angle, 2));
-        savePointsToTree(); // Sync to ValueTree
-        updateHostDisplay(); // Notify DAW that state has changed
+        savePointsToTree();
+        updateHostDisplay();
     }
 }
 
@@ -361,11 +332,8 @@ void PluginProcessor::addSpawnPoint (juce::Point<float> position, float angle)
     data.position = position;
     data.momentumAngle = angle;
     spawnPoints.push_back (data);
-    savePointsToTree(); // Sync to ValueTree
-    updateHostDisplay(); // Notify DAW that state has changed
-    LOG_INFO("Processor: Added spawn point - Total: " + juce::String(spawnPoints.size()) + 
-        " at (" + juce::String(position.x) + ", " + juce::String(position.y) + 
-        ") angle: " + juce::String(angle));
+    savePointsToTree();
+    updateHostDisplay();
 }
 
 void PluginProcessor::removeSpawnPoint (int index)
@@ -373,8 +341,8 @@ void PluginProcessor::removeSpawnPoint (int index)
     if (index >= 0 && index < static_cast<int>(spawnPoints.size()))
     {
         spawnPoints.erase (spawnPoints.begin() + index);
-        savePointsToTree(); // Sync to ValueTree
-        updateHostDisplay(); // Notify DAW that state has changed
+        savePointsToTree();
+        updateHostDisplay();
     }
 }
 
@@ -384,14 +352,12 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
 {
     const juce::ScopedLock lock (particlesLock);
     
-    // Check particle limit and remove oldest if at max
+    // Remove oldest particle if at limit
     if (particles.size() >= maxParticles)
     {
-        // Remove oldest particle (index 0) and clean up note mapping
         auto* oldestParticle = particles[0];
         int oldNote = oldestParticle->getMidiNoteNumber();
         
-        // Remove from note mapping
         if (activeNoteToParticles.count(oldNote) > 0)
         {
             auto& particleIndices = activeNoteToParticles[oldNote];
@@ -402,9 +368,8 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
         }
         
         particles.remove (0);
-        LOG_INFO("Removed oldest particle to make room (max: " + juce::String(maxParticles) + ")");
         
-        // Decrement all particle indices in the mapping since we removed index 0
+        // Shift all indices down
         for (auto& pair : activeNoteToParticles)
         {
             for (auto& idx : pair.second)
@@ -412,60 +377,42 @@ void PluginProcessor::spawnParticle (juce::Point<float> position, juce::Point<fl
         }
     }
     
-    // Create new particle with ADSR parameters (both logarithmic for audio, linear for visuals)
     auto* particle = new Particle (position, velocity, canvasBounds, midiNoteNumber,
                                    attackTime, sustainLevel, sustainLevelLinear, releaseTime, initialVelocity, pitchShift);
-    particle->setBounceMode (bounceMode); // Set current bounce mode
+    particle->setBounceMode (bounceMode);
     int newIndex = particles.size();
     particles.add (particle);
     
-    // Add to note mapping for release handling
     activeNoteToParticles[midiNoteNumber].push_back(newIndex);
 }
 
 //==============================================================================
-// MIDI Note Handlers
-
 void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchShift)
 {
-    LOG_INFO("handleNoteOn: note=" + juce::String(noteNumber) + " velocity=" + juce::String(velocity));
-    
-    // Ensure we have at least one spawn point and one mass point
-    // (Create defaults on first use if not loaded from saved state)
+    // Create defaults if needed
     if (spawnPoints.size() == 0)
-    {
-        LOG_INFO("No spawn points found - creating default spawn point at center");
         spawnPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 0.0f });
-    }
     
     if (massPoints.size() == 0)
-    {
-        LOG_INFO("No mass points found - creating default mass point at center");
         massPoints.push_back ({ juce::Point<float>(200.0f, 200.0f), 2.0f });
-    }
     
-    // Get ADSR parameters
     float attackTime = apvts.getRawParameterValue("attack")->load();
     float sustainLevelLinear = apvts.getRawParameterValue("sustain")->load();
     float releaseTime = apvts.getRawParameterValue("release")->load();
     
-    // Convert sustain from linear (0.0-1.0) to logarithmic (perceived loudness)
-    // At 0.5 slider position, we want -6dB (50% perceived loudness), not 0.5 amplitude
-    // Formula: amplitude = 10^((linear-1) * range_dB / 20)
-    // Range: 0.0 = -60dB (silence), 1.0 = 0dB (full volume)
+    // Convert linear sustain (0-1) to logarithmic amplitude (-60dB to 0dB)
     float sustainLevel;
     if (sustainLevelLinear < 0.001f)
     {
-        sustainLevel = 0.0f; // Below 0.1% = silence
+        sustainLevel = 0.0f;
     }
     else
     {
-        // Map 0.0-1.0 to -60dB to 0dB logarithmically
-        float sustainDb = (sustainLevelLinear - 1.0f) * 60.0f; // -60dB to 0dB
+        float sustainDb = (sustainLevelLinear - 1.0f) * 60.0f;
         sustainLevel = juce::Decibels::decibelsToGain(sustainDb);
     }
     
-    // Use round-robin spawn point selection
+    // Round-robin spawn point selection
     static size_t nextSpawnIndex = 0;
     size_t spawnIndex = nextSpawnIndex % spawnPoints.size();
     nextSpawnIndex = (nextSpawnIndex + 1) % spawnPoints.size();
@@ -473,32 +420,23 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     auto& spawn = spawnPoints[spawnIndex];
     juce::Point<float> spawnPos = spawn.position;
     
-    // Use exact momentum angle from spawn point (no randomness)
-    float finalAngle = spawn.momentumAngle;
-    
     float momentumMagnitude = 50.0f;
     juce::Point<float> initialVelocity (
-        std::cos(finalAngle) * momentumMagnitude,
-        std::sin(finalAngle) * momentumMagnitude
+        std::cos(spawn.momentumAngle) * momentumMagnitude,
+        std::sin(spawn.momentumAngle) * momentumMagnitude
     );
-    initialVelocity *= 2.0f; // Scale up for visibility
+    initialVelocity *= 2.0f;
     
-    // Spawn particle with MIDI parameters and ADSR (pass both logarithmic and linear sustain)
     spawnParticle (spawnPos, initialVelocity, velocity, pitchShift, noteNumber, attackTime, sustainLevel, sustainLevelLinear, releaseTime);
-    LOG_INFO("Particle spawned from note-on! Total particles: " + juce::String(particles.size()));
 }
 
 void PluginProcessor::handleNoteOff (int noteNumber)
 {
-    LOG_INFO("handleNoteOff: note=" + juce::String(noteNumber));
-    
     const juce::ScopedLock lock (particlesLock);
     
-    // Find all particles associated with this MIDI note and trigger release
     if (activeNoteToParticles.count(noteNumber) > 0)
     {
         auto& particleIndices = activeNoteToParticles[noteNumber];
-        LOG_INFO("Triggering release for " + juce::String(particleIndices.size()) + " particles");
         
         for (int idx : particleIndices)
         {
@@ -507,46 +445,35 @@ void PluginProcessor::handleNoteOff (int noteNumber)
                 particles[idx]->triggerRelease();
             }
         }
-        
-        // Don't erase from map yet - particles will be removed when release completes
     }
 }
 
 //==============================================================================
-// Particle simulation update
-
 void PluginProcessor::updateParticleSimulation (double currentTime, int /*bufferSize*/)
 {
-    // Calculate time since last update
     if (lastUpdateTime == 0.0)
         lastUpdateTime = currentTime;
     
     float deltaTime = static_cast<float>(currentTime - lastUpdateTime);
     lastUpdateTime = currentTime;
-    
-    // Clamp delta time to avoid huge jumps
     deltaTime = juce::jmin (deltaTime, 0.1f);
     
-    // Lock particles for update
     const juce::ScopedLock lock (particlesLock);
     
-    // Update spawn point visual rotations (animation only, not used for particle spawning)
+    // Rotate spawn points for visual animation
     for (auto& spawn : spawnPoints)
     {
-        spawn.visualRotation += deltaTime * 0.5f; // Rotate at 0.5 rad/s
+        spawn.visualRotation += deltaTime * 0.5f;
         if (spawn.visualRotation > juce::MathConstants<float>::twoPi)
             spawn.visualRotation -= juce::MathConstants<float>::twoPi;
     }
     
-    // Update all particles
     for (int i = particles.size() - 1; i >= 0; --i)
     {
         auto* particle = particles[i];
-        
-        // Update canvas bounds
         particle->setCanvasBounds (canvasBounds);
         
-        // Calculate gravity force from all mass points
+        // Calculate gravity from mass points
         juce::Point<float> totalForce (0.0f, 0.0f);
         
         for (const auto& mass : massPoints)
@@ -555,10 +482,8 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int /*buffer
             juce::Point<float> direction = mass.position - particlePos;
             float distance = direction.getDistanceFromOrigin();
             
-            // Avoid division by zero and singularities
             if (distance > 5.0f)
             {
-                // Apply mass multiplier based on size
                 float effectiveGravity = gravityStrength * mass.massMultiplier;
                 float forceMagnitude = effectiveGravity / (distance * distance);
                 juce::Point<float> normalizedDirection = direction / distance;
@@ -566,24 +491,19 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int /*buffer
             }
         }
         
-        // Apply gravity force
         particle->applyForce (totalForce);
-        
-        // Update particle physics
         particle->update (deltaTime);
         
-        // Wrap around or bounce off canvas boundaries
         if (bounceMode)
             particle->bounceOff (canvasBounds);
         else
             particle->wrapAround (canvasBounds);
         
-        // Remove finished particles (ADSR release complete)
+        // Remove finished particles
         if (particle->isFinished())
         {
             int noteNumber = particle->getMidiNoteNumber();
             
-            // Clean up note mapping
             if (activeNoteToParticles.count(noteNumber) > 0)
             {
                 auto& particleIndices = activeNoteToParticles[noteNumber];
@@ -595,7 +515,7 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int /*buffer
             
             particles.remove (i);
             
-            // Decrement all particle indices greater than i in the mapping
+            // Shift indices
             for (auto& pair : activeNoteToParticles)
             {
                 for (auto& idx : pair.second)
@@ -606,20 +526,16 @@ void PluginProcessor::updateParticleSimulation (double currentTime, int /*buffer
 }
 
 //==============================================================================
-
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
   #if JucePlugin_IsMidiEffect
     juce::ignoreUnused (layouts);
     return true;
   #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
      && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
 
-    // This checks if the input layout matches the output layout
    #if ! JucePlugin_IsSynth
     if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
         return false;
@@ -635,22 +551,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     juce::ScopedNoDenormals noDenormals;
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // Clear all output channels
     for (auto i = 0; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
     
-    // Merge in any pending MIDI messages from UI thread
+    // Merge pending MIDI from UI thread
     {
         const juce::ScopedLock lock (midiLock);
         if (!pendingMidiMessages.isEmpty())
         {
-            LOG_INFO("Merging " + juce::String(pendingMidiMessages.getNumEvents()) + " pending MIDI messages into buffer");
             midiMessages.addEvents (pendingMidiMessages, 0, buffer.getNumSamples(), 0);
             pendingMidiMessages.clear();
         }
     }
 
-    // Process MIDI messages to spawn particles or trigger release
+    // Process MIDI
     for (const auto metadata : midiMessages)
     {
         auto message = metadata.getMessage();
@@ -658,221 +572,137 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         if (message.isNoteOn())
         {
             int midiNote = message.getNoteNumber();
-            float midiVelocity = message.getVelocity() / 127.0f; // Normalize to 0.0-1.0
-            
-            LOG_INFO("MIDI Note On received: note=" + juce::String(midiNote) + " velocity=" + juce::String(midiVelocity));
-            
-            // Calculate pitch shift from MIDI note (C3 = 60 = no shift)
+            float midiVelocity = message.getVelocity() / 127.0f;
             float semitoneOffset = midiNote - 60;
             float pitchShift = std::pow (2.0f, semitoneOffset / 12.0f);
-            
-            // Spawn particle with ADSR control
             handleNoteOn (midiNote, midiVelocity, pitchShift);
         }
         else if (message.isNoteOff())
         {
-            int midiNote = message.getNoteNumber();
-            
-            LOG_INFO("MIDI Note Off received: note=" + juce::String(midiNote));
-            
-            // Trigger release phase for all particles associated with this note
-            handleNoteOff (midiNote);
+            handleNoteOff (message.getNoteNumber());
         }
     }
     
-    // Update particle simulation (physics, gravity, lifetime)
     double currentTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
     updateParticleSimulation (currentTime, buffer.getNumSamples());
 
-    // Check if we have audio file loaded
     if (!hasAudioFileLoaded() || audioFileBuffer.getNumSamples() == 0)
         return;
     
-    // Get parameter values
     float grainSizeMs = apvts.getRawParameterValue("grainSize")->load();
     float grainFreq = apvts.getRawParameterValue("grainFreq")->load();
     float masterGainDb = apvts.getRawParameterValue("masterGain")->load();
     
-    // Handle -infinity case: if gain is at -60dB (leftmost position), treat as mute
     float masterGainLinear;
     if (masterGainDb <= -60.0f)
-    {
-        masterGainLinear = 0.0f; // Complete silence for -infinity
-    }
+        masterGainLinear = 0.0f;
     else
-    {
         masterGainLinear = juce::Decibels::decibelsToGain(masterGainDb);
-    }
     
-    // Note: attack and release are now ADSR parameters, not grain envelope parameters
-    // Grain crossfade is hardcoded to 50% in Particle::getGrainAmplitude()
-    
-    // Lock particles for grain processing (already locked in updateParticleSimulation, but released)
     const juce::ScopedLock lock (particlesLock);
     
     if (particles.isEmpty())
         return;
     
-    // Count total active grains for automatic gain compensation
+    // Automatic gain compensation for overlapping grains
     int totalActiveGrains = 0;
     for (auto* particle : particles)
-    {
         totalActiveGrains += particle->getActiveGrains().size();
-    }
     
-    // Automatic gain compensation to prevent clipping when many grains overlap
-    // Use a smooth curve that doesn't reduce gain too much for reasonable grain counts
     float targetGainCompensation = 1.0f;
     if (totalActiveGrains > 1)
     {
-        // Gentle compression curve: reduces gain as grain count increases
-        // At 4 grains: ~0.7x, at 8 grains: ~0.5x, at 16 grains: ~0.35x
         targetGainCompensation = 1.0f / std::sqrt(static_cast<float>(totalActiveGrains));
-        
-        // Clamp to reasonable range (never reduce by more than 90%)
         targetGainCompensation = juce::jmax(0.1f, targetGainCompensation);
     }
     
-    // CRITICAL FIX: Smooth gain compensation changes to avoid clicks!
-    // When grain count changes, we can't instantly change volume - must ramp smoothly
+    // Smooth gain changes to prevent clicks
     static float smoothedGainCompensation = 1.0f;
-    
-    // Adaptive smoothing: slower for larger changes to prevent audible steps
-    // Calculate how big the change is (percentage difference)
     float gainDifference = std::abs(targetGainCompensation - smoothedGainCompensation);
     float relativeDifference = gainDifference / juce::jmax(0.01f, smoothedGainCompensation);
-    
-    // Time constant scales with change size: 10ms for small changes, up to 50ms for large changes
-    // This prevents rapid fluctuations when grain count changes wildly
-    float timeConstant = 0.010f + (relativeDifference * 0.040f);  // 10ms to 50ms
-    timeConstant = juce::jmin(0.050f, timeConstant);  // Cap at 50ms
-    
-    // Exponential smoothing (one-pole lowpass filter)
+    float timeConstant = 0.010f + (relativeDifference * 0.040f);
+    timeConstant = juce::jmin(0.050f, timeConstant);
     float smoothingCoefficient = 1.0f - static_cast<float>(std::exp(-2.2 / (static_cast<double>(timeConstant) * getSampleRate())));
     smoothedGainCompensation += smoothingCoefficient * (targetGainCompensation - smoothedGainCompensation);
-    
     float gainCompensation = smoothedGainCompensation;
     
-    // Process each particle's grains
     for (auto* particle : particles)
     {
-        // Update sample rate if needed (cached internally)
         particle->updateSampleRate (getSampleRate());
-        
-        // Update grain parameters (attack/release ignored - kept for API compatibility)
         particle->setGrainParameters (grainSizeMs, 0.0f, 0.0f);
         
-        // Check if we should trigger a new grain based on frequency
         if (particle->shouldTriggerNewGrain (getSampleRate(), grainFreq))
-        {
             particle->triggerNewGrain (audioFileBuffer.getNumSamples());
-        }
         
-        // Get all active grains for this particle
         auto& grains = particle->getActiveGrains();
         
-        // BUG #14 FIX: Reset per-buffer sample count for each grain
         for (auto& grain : grains)
-        {
             grain.samplesRenderedThisBuffer = 0;
-        }
         
-        // Skip particles with no active grains (silent - no audio output)
         if (grains.empty())
         {
-            // Even if no grains to render, still update particle state for next buffer
             particle->updateGrains (buffer.getNumSamples());
             continue;
         }
         
-        // CRITICAL: Pre-calculate ADSR amplitudes for entire buffer (once per sample)
-        // This prevents ADSR from advancing multiple times per sample (once per grain)
-        // Uses smoothed amplitude to eliminate stepping artifacts during transitions
+        // Pre-calculate ADSR for entire buffer
         std::vector<float> adsrAmplitudes(static_cast<size_t>(buffer.getNumSamples()));
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             particle->updateADSRSample (getSampleRate());
-            adsrAmplitudes[static_cast<size_t>(i)] = particle->getADSRAmplitudeSmoothed(); // Use smoothed value
+            adsrAmplitudes[static_cast<size_t>(i)] = particle->getADSRAmplitudeSmoothed();
         }
         
-        // Process each active grain
         for (auto& grain : grains)
         {
             int grainStartSample = grain.startSample;
             int grainPosition = grain.playbackPosition;
             int totalGrainSamples = particle->getTotalGrainSamples();
             
-            // Calculate how many samples to render this block
             int samplesToRender = juce::jmin (buffer.getNumSamples(), 
                                               totalGrainSamples - grainPosition);
             
             if (samplesToRender <= 0)
                 continue;
             
-            // Get edge fade info (simple amplitude fade at boundaries)
             auto edgeFade = particle->getEdgeFade();
             
-            // NOTE: Grain amplitude (Hann window) changes per-sample as grain plays
-            // ADSR also changes per-sample for smooth transitions during short attack/release
-            // Don't calculate either here - calculate inside the sample loop!
-            
-            // Pre-calculate constant amplitude factors (NOT grain envelope or ADSR - those are per-sample)
             float constantAmplitude = masterGainLinear;
-            constantAmplitude *= edgeFade.amplitude;  // Canvas edge fading
-            constantAmplitude *= particle->getInitialVelocityMultiplier();  // MIDI velocity
-            constantAmplitude *= gainCompensation;  // Automatic gain reduction to prevent clipping when many grains overlap
-            // NOTE: ADSR is now applied per-sample for smooth short attack/release
+            constantAmplitude *= edgeFade.amplitude;
+            constantAmplitude *= particle->getInitialVelocityMultiplier();
+            constantAmplitude *= gainCompensation;
             
-            // NOTE: Can't skip grains based on amplitude here since it changes per-sample
-            // Grain amplitude will be calculated in the sample loop below
-            
-            // Get pitch shift for this particle
             float pitchShift = particle->getPitchShift();
             
-            // Calculate stereo pan gains ONCE per grain (cache trig functions)
             float panAngle = (edgeFade.pan + 1.0f) * juce::MathConstants<float>::pi / 4.0f;
             float leftPanGain = std::cos (panAngle);
             float rightPanGain = std::sin (panAngle);
             
-            // Pre-calculate channel averaging multiplier (faster than division)
             float channelMult = 1.0f / static_cast<float>(audioFileBuffer.getNumChannels());
-            
-            // Cache buffer length for fast wrapping
             int bufferLength = audioFileBuffer.getNumSamples();
             
-            // CPU Optimization: Get direct read pointers for faster access (no virtual function calls)
             const float** sourceChannelPointers = new const float*[static_cast<size_t>(audioFileBuffer.getNumChannels())];
             for (int ch = 0; ch < audioFileBuffer.getNumChannels(); ++ch)
                 sourceChannelPointers[ch] = audioFileBuffer.getReadPointer (ch);
             
-            // Get output write pointers
             float* leftChannel = totalNumOutputChannels >= 1 ? buffer.getWritePointer (0) : nullptr;
             float* rightChannel = totalNumOutputChannels >= 2 ? buffer.getWritePointer (1) : nullptr;
             
-            // Render grain samples with pitch shift
             for (int i = 0; i < samplesToRender; ++i)
             {
-                // Calculate source position with pitch shift (float for interpolation)
                 float sourcePosition = grainStartSample + ((grainPosition + i) * pitchShift);
                 
-                // WRAP around buffer boundaries to prevent reading past the end
-                // This allows grains to seamlessly loop from end back to start
+                // Wrap around buffer boundaries
                 while (sourcePosition >= bufferLength)
                     sourcePosition -= bufferLength;
                 while (sourcePosition < 0)
                     sourcePosition += bufferLength;
                 
-                // Cubic (Hermite) interpolation for smoother pitch shift (eliminates aliasing noise)
-                // Uses 4 samples: y0, y1, y2, y3 where we interpolate between y1 and y2
                 int sourceSample = static_cast<int>(sourcePosition);
-                
-                // BUG #15 & #16 FIX: Properly wrap indices for cubic interpolation
-                // Instead of returning silence at boundaries, wrap all 4 sample indices
-                // This allows seamless wraparound from end to start of audio file
                 float fraction = sourcePosition - sourceSample;
                 fraction = juce::jlimit(0.0f, 1.0f, fraction);
                 
-                // Get 4 sample indices for cubic interpolation with wrapping
+                // Cubic interpolation indices with wrapping
                 auto wrapIndex = [bufferLength](int index) -> int {
                     while (index < 0) index += bufferLength;
                     while (index >= bufferLength) index -= bufferLength;
@@ -884,7 +714,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int s2 = wrapIndex(sourceSample + 1);
                 int s3 = wrapIndex(sourceSample + 2);
                 
-                // Get audio samples and mix channels
                 float y0 = 0.0f, y1 = 0.0f, y2 = 0.0f, y3 = 0.0f;
                 for (int channel = 0; channel < audioFileBuffer.getNumChannels(); ++channel)
                 {
@@ -898,85 +727,56 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 y2 *= channelMult;
                 y3 *= channelMult;
                 
-                // Cubic Hermite interpolation (4-point, 3rd-order)
-                // This creates smooth curves between samples, eliminating high-frequency aliasing
+                // Cubic Hermite interpolation
                 float c0 = y1;
                 float c1 = 0.5f * (y2 - y0);
                 float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
                 float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
                 float audioSample = ((c3 * fraction + c2) * fraction + c1) * fraction + c0;
                 
-                // Clamp output to reasonable range to prevent cubic overshoot artifacts
-                // Cubic interpolation can exceed input range, causing audible distortion/noise
+                // Clamp to prevent cubic overshoot
                 float minSample = juce::jmin(y0, y1, y2, y3);
                 float maxSample = juce::jmax(y0, y1, y2, y3);
                 audioSample = juce::jlimit(minSample, maxSample, audioSample);
                 
-                // Aggressive denormal protection: flush very small numbers to zero
-                // This prevents CPU thrashing and eliminates quiet static/artifacts
-                if (std::abs(audioSample) < 1e-6f)  // Increased threshold from 1e-8f
+                // Flush denormals
+                if (std::abs(audioSample) < 1e-6f)
                     audioSample = 0.0f;
                 
-                // CRITICAL FIX: Calculate grain amplitude PER-SAMPLE as grain plays through
-                // Create temporary grain with current sample position for amplitude calculation
+                // Calculate grain amplitude (Hann window)
                 Grain currentGrain = grain;
                 currentGrain.playbackPosition = grainPosition + i;
                 float grainAmplitude = particle->getGrainAmplitude (currentGrain);
                 
-                // NOTE: Removed denormal protection on grainAmplitude - we NEED the tiny fade-in values!
-                // The Hann window naturally produces very small values at the start (< 1e-6)
-                // Forcing these to zero defeats the purpose of the fade-in and causes clicks
-                
-                // CRITICAL: Use pre-calculated ADSR amplitude for this buffer sample
-                // ADSR is calculated once per sample for entire particle (prevents multiple updates per sample)
                 float adsrAmplitude = adsrAmplitudes[static_cast<size_t>(i)];
-                
-                // Combine grain envelope with constant amplitude factors and per-sample ADSR
                 float totalAmplitude = grainAmplitude * constantAmplitude * adsrAmplitude;
                 
-                // CRITICAL: Don't skip samples even if amplitude is zero!
-                // The first sample of a grain has Hann=0.0 by design (fade-in starts at zero)
-                // Skipping it means the grain jumps from silence to position 1, causing a click
-                // We MUST render the zero-amplitude sample so the grain position advances properly
-                // (The audio output will be zero anyway, so this doesn't add noise)
-                
-                // Calculate final stereo gains (apply amplitude modulation to cached pan gains)
                 float leftGain = leftPanGain * totalAmplitude;
                 float rightGain = rightPanGain * totalAmplitude;
                 
-                // Calculate final samples with soft clipping protection
                 float leftSample = audioSample * leftGain;
                 float rightSample = audioSample * rightGain;
                 
-                // Soft clip to prevent harsh digital clipping (tanh provides smooth saturation)
-                // Only apply if signal is hot (> 0.9) to avoid unnecessary processing
+                // Soft clip to prevent harsh digital clipping
                 if (std::abs(leftSample) > 0.9f)
-                    leftSample = std::tanh(leftSample * 0.9f) / 0.9f; // Normalize back
+                    leftSample = std::tanh(leftSample * 0.9f) / 0.9f;
                 if (std::abs(rightSample) > 0.9f)
                     rightSample = std::tanh(rightSample * 0.9f) / 0.9f;
                 
-                // Write to output with panning using direct pointer access
                 if (leftChannel)
                     leftChannel[i] += leftSample;
                 if (rightChannel)
                     rightChannel[i] += rightSample;
             }
             
-            // BUG #14 FIX: Track how many samples this grain actually rendered
             grain.samplesRenderedThisBuffer = samplesToRender;
-            
-            // Clean up temporary pointer array
             delete[] sourceChannelPointers;
         }
         
-        // FIX: Update grains AFTER rendering them, not before!
-        // This ensures new grains start at position 0 and get their full fade-in
-        // Old behavior: triggerGrain(pos=0) -> updateGrains(pos=512) -> render(pos=512) = CLICK!
-        // New behavior: triggerGrain(pos=0) -> render(pos=0) -> updateGrains(pos=512) = SMOOTH!
         particle->updateGrains (buffer.getNumSamples());
     }
     
-    // Store the actual output values for next buffer's continuity checking
+    // Store output for continuity checking
     if (totalNumOutputChannels >= 1)
     {
         float* leftChannel = buffer.getWritePointer(0);
@@ -1067,13 +867,10 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 }
 
 //==============================================================================
-// Bounce Mode
-
 void PluginProcessor::setBounceMode (bool enabled)
 {
     bounceMode = enabled;
     
-    // Update all existing particles
     const juce::ScopedLock lock (particlesLock);
     for (auto* particle : particles)
     {
@@ -1083,7 +880,6 @@ void PluginProcessor::setBounceMode (bool enabled)
 }
 
 //==============================================================================
-// Audio File Loading
 
 void PluginProcessor::loadAudioFile (const juce::File& file)
 {
@@ -1095,20 +891,16 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
     
     LOG_INFO("Loading audio file: " + file.getFullPathName());
     
-    // Create audio format manager and register common formats
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
     
-    // Create reader for the file
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     
     if (reader != nullptr)
     {
-        // Store file info
         loadedAudioFile = file;
         audioFileSampleRate = reader->sampleRate;
         
-        // Read audio data into buffer
         audioFileBuffer.setSize (static_cast<int>(reader->numChannels),
                                  static_cast<int>(reader->lengthInSamples));
         
@@ -1119,14 +911,13 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
                       true,
                       true);
         
-        LOG_INFO("Audio file loaded successfully - Channels: " + juce::String(reader->numChannels) +
-                 ", Sample Rate: " + juce::String(reader->sampleRate) + " Hz, " +
-                 "Length: " + juce::String(reader->lengthInSamples) + " samples (" +
-                 juce::String(reader->lengthInSamples / reader->sampleRate, 2) + " seconds)");
+        LOG_INFO("Audio file loaded - " + juce::String(reader->numChannels) + " ch, " +
+                 juce::String(reader->sampleRate) + " Hz, " +
+                 juce::String(reader->lengthInSamples / reader->sampleRate, 2) + "s");
     }
     else
     {
-        LOG_WARNING("Failed to create audio reader for file: " + file.getFullPathName());
+        LOG_WARNING("Failed to create audio reader for: " + file.getFullPathName());
         loadedAudioFile = juce::File();
         audioFileBuffer.setSize (0, 0);
         audioFileSampleRate = 0.0;
@@ -1134,14 +925,13 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
 }
 
 //==============================================================================
-// AudioProcessorValueTreeState::Listener implementation
+
 void PluginProcessor::parameterChanged (const juce::String& /*parameterID*/, float /*newValue*/)
 {
-    // No parameters currently need handling
 }
 
 //==============================================================================
-// This creates new instances of the plugin..
+
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new PluginProcessor();

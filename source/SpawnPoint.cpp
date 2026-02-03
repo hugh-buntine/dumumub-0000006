@@ -10,21 +10,14 @@ juce::Image SpawnPoint::spawnerImage2Hover;
 //==============================================================================
 SpawnPoint::SpawnPoint()
 {
-    // Constructor
     setSize (20, 20);
-    
-    // Enable mouse events
     setMouseCursor (juce::MouseCursor::DraggingHandCursor);
-    
-    // Initialize with a default momentum vector pointing right at minimum length
     momentumVector = juce::Point<float> (20.0f, 0.0f);
-    
     LOG_INFO("SpawnPoint created");
 }
 
 SpawnPoint::~SpawnPoint()
 {
-    // Destructor
     LOG_INFO("SpawnPoint destroyed");
 }
 
@@ -65,50 +58,40 @@ void SpawnPoint::updateRotation (float deltaTime)
 //==============================================================================
 void SpawnPoint::paint (juce::Graphics& g)
 {
-    // Get center position and size
     float centerX = getWidth() / 2.0f;
     float centerY = getHeight() / 2.0f;
     
-    // Select images based on hover or selection state
-    // Use hover images if selected OR hovered
     const juce::Image& img1 = (selected || isHovered) ? spawnerImage1Hover : spawnerImage1;
     const juce::Image& img2 = (selected || isHovered) ? spawnerImage2Hover : spawnerImage2;
     
-    // Draw spawner image 2 (bottom layer, counter-clockwise rotation)
+    // Bottom layer (counter-clockwise)
     if (img2.isValid())
     {
-        // Calculate scale factors (50% bigger than component size)
         float scaleX = (float)getWidth() / img2.getWidth() * 1.5f;
         float scaleY = (float)getHeight() / img2.getHeight() * 1.5f;
         
-        // Start with identity, translate so center is at origin, scale, rotate, translate back
         juce::AffineTransform transform = juce::AffineTransform::translation (-img2.getWidth() / 2.0f, -img2.getHeight() / 2.0f)
             .scaled (scaleX, scaleY)
             .rotated (rotation2)
             .translated (centerX, centerY);
         
-        // Draw the rotated spawner image
         g.drawImageTransformed (img2, transform);
     }
     
-    // Draw spawner image 1 (top layer, clockwise rotation)
+    // Top layer (clockwise)
     if (img1.isValid())
     {
-        // Calculate scale factors (50% bigger than component size)
         float scaleX = (float)getWidth() / img1.getWidth() * 1.5f;
         float scaleY = (float)getHeight() / img1.getHeight() * 1.5f;
         
-        // Start with identity, translate so center is at origin, scale, rotate, translate back
         juce::AffineTransform transform = juce::AffineTransform::translation (-img1.getWidth() / 2.0f, -img1.getHeight() / 2.0f)
             .scaled (scaleX, scaleY)
             .rotated (rotation1)
             .translated (centerX, centerY);
         
-        // Draw the rotated spawner image
         g.drawImageTransformed (img1, transform);
     }
     
-    // Fallback: draw green circle if images not loaded
     if (!img1.isValid() && !img2.isValid())
     {
         g.setColour (juce::Colour (0, 255, 0));
@@ -118,58 +101,36 @@ void SpawnPoint::paint (juce::Graphics& g)
 
 void SpawnPoint::resized()
 {
-    // Layout child components here
 }
 
 //==============================================================================
 void SpawnPoint::mouseDown (const juce::MouseEvent& event)
 {
-    LOG_INFO("SpawnPoint::mouseDown - Position in component: (" + 
-             juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + 
-             "), Button: " + (event.mods.isLeftButtonDown() ? "Left" : 
-                             event.mods.isRightButtonDown() ? "Right" : "Other") +
-             ", Is popup menu: " + (event.mods.isPopupMenu() ? "Yes" : "No"));
-    
-    // Right-click shows menu
     if (event.mods.isPopupMenu())
     {
-        LOG_INFO("SpawnPoint::mouseDown - Showing menu");
         showMenu();
         return;
     }
     
-    // Left-click selects the spawn point
-    LOG_INFO("SpawnPoint::mouseDown - Selecting spawn point, was selected: " + 
-             juce::String(selected ? "Yes" : "No"));
     setSelected (true);
-    
-    // Start dragging the spawn point
     dragger.startDraggingComponent (this, event);
-    LOG_INFO("Started dragging SpawnPoint from position (" + 
-             juce::String(getX()) + ", " + juce::String(getY()) + ")");
+    LOG_INFO("Started dragging SpawnPoint from (" + juce::String(getX()) + ", " + juce::String(getY()) + ")");
 }
 
 void SpawnPoint::showMenu()
 {
-    LOG_INFO("SpawnPoint::showMenu - Opening context menu");
-    
     juce::PopupMenu menu;
     menu.setLookAndFeel (&popupMenuLookAndFeel);
     
-    // Check if we can delete (need at least 1 spawn point)
     int spawnPointCount = getSpawnPointCount ? getSpawnPointCount() : 1;
     bool canDelete = spawnPointCount > 1;
-    
-    LOG_INFO("SpawnPoint::showMenu - Spawn point count: " + juce::String(spawnPointCount) + 
-             ", Can delete: " + juce::String(canDelete ? "Yes" : "No"));
     
     menu.addItem (1, "delete", canDelete);
     
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this, canDelete] (int result)
                         {
-                            LOG_INFO("SpawnPoint::showMenu - Menu result: " + juce::String(result));
-                            if (result == 1 && canDelete) // Delete
+                            if (result == 1 && canDelete)
                             {
                                 LOG_INFO("SpawnPoint - Requesting deletion");
                                 if (onDeleteRequested)
@@ -180,25 +141,14 @@ void SpawnPoint::showMenu()
 
 void SpawnPoint::mouseDrag (const juce::MouseEvent& event)
 {
-    // Removed excessive logging - was cluttering log files
-    // LOG_INFO("SpawnPoint::mouseDrag - Event position: (" + 
-    //          juce::String(event.position.x, 2) + ", " + juce::String(event.position.y, 2) + ")");
-    
-    // Constrain dragging to parent component bounds if parent exists
     if (getParentComponent() != nullptr)
     {
         constrainer.setMinimumOnscreenAmounts (getHeight(), getWidth(), 
                                                getHeight(), getWidth());
     }
     
-    // Perform the drag
     dragger.dragComponent (this, event, &constrainer);
     
-    // Removed excessive logging - was cluttering log files
-    // LOG_INFO("SpawnPoint::mouseDrag - New position: (" + 
-    //          juce::String(getX()) + ", " + juce::String(getY()) + ")");
-    
-    // Notify parent that spawn point moved (so arrow can be redrawn)
     if (onSpawnPointMoved)
         onSpawnPointMoved();
 }
@@ -206,14 +156,12 @@ void SpawnPoint::mouseDrag (const juce::MouseEvent& event)
 void SpawnPoint::mouseUp (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
-    LOG_INFO("Stopped dragging SpawnPoint at position (" + 
-             juce::String(getX()) + ", " + juce::String(getY()) + ")");
+    LOG_INFO("Stopped dragging SpawnPoint at (" + juce::String(getX()) + ", " + juce::String(getY()) + ")");
 }
 
 void SpawnPoint::mouseEnter (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
-    LOG_INFO("SpawnPoint::mouseEnter - Mouse entered spawn point");
     isHovered = true;
     repaint();
 }
@@ -221,7 +169,6 @@ void SpawnPoint::mouseEnter (const juce::MouseEvent& event)
 void SpawnPoint::mouseExit (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
-    LOG_INFO("SpawnPoint::mouseExit - Mouse exited spawn point");
     isHovered = false;
     repaint();
 }

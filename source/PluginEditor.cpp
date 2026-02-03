@@ -5,7 +5,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 {
     juce::ignoreUnused (processorRef);
     
-    // Load background images
     backgroundImage = juce::ImageCache::getFromMemory (BinaryData::BACKGROUND_png, 
                                                        BinaryData::BACKGROUND_pngSize);
     canvasBackgroundImage = juce::ImageCache::getFromMemory (BinaryData::CANVAS_png, 
@@ -21,17 +20,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     dropTextImage = juce::ImageCache::getFromMemory (BinaryData::DROPTEXT_png, 
                                                      BinaryData::DROPTEXT_pngSize);
     
-    // Load custom font (Duru Sans) - use the correct method for custom fonts from memory
     customTypeface = juce::Typeface::createSystemTypefaceFor (BinaryData::DuruSansRegular_ttf,
                                                                BinaryData::DuruSansRegular_ttfSize);
     
-    // Debug: Check if font loaded
     if (customTypeface != nullptr)
         DBG("Duru Sans font loaded successfully. Family: " + customTypeface->getName());
     else
         DBG("ERROR: Duru Sans font failed to load!");
     
-    // Load knob images and set up custom LookAndFeel for each slider
     auto knob1 = juce::ImageCache::getFromMemory (BinaryData::KNOB1_png, BinaryData::KNOB1_pngSize);
     auto knob1Hover = juce::ImageCache::getFromMemory (BinaryData::KNOB1HOVER_png, BinaryData::KNOB1HOVER_pngSize);
     attackLookAndFeel.setKnobImages (knob1, knob1Hover);
@@ -60,7 +56,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     auto gainKnobHover = juce::ImageCache::getFromMemory (BinaryData::GAINKNOBHOVER_png, BinaryData::GAINKNOBHOVER_pngSize);
     masterGainLookAndFeel.setKnobImages (gainKnob, gainKnobHover);
     
-    // Load button images
     graphicsButtonUnpressed = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONUNPRESSED_png, 
                                                                BinaryData::GRAPHICSBUTTONUNPRESSED_pngSize);
     graphicsButtonUnpressedHover = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONUNPRESSEDHOVER_png, 
@@ -70,37 +65,30 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     graphicsButtonPressedHover = juce::ImageCache::getFromMemory (BinaryData::GRAPHICSBUTTONPRESSEDHOVER_png, 
                                                                   BinaryData::GRAPHICSBUTTONPRESSEDHOVER_pngSize);
     
-    // Setup Graphics button
     addAndMakeVisible (graphicsButton);
     graphicsButton.setImages (graphicsButtonUnpressed, graphicsButtonUnpressedHover,
                              graphicsButtonPressed, graphicsButtonPressedHover);
     graphicsButton.onClick = [this]() {
-        LOG_INFO("PluginEditor - Graphics button clicked, new state: " + 
-                 juce::String(graphicsButton.getToggleState() ? "ON" : "OFF"));
-        // Update canvas bounce mode based on button state
+        LOG_INFO("Graphics button clicked: " + juce::String(graphicsButton.getToggleState() ? "ON" : "OFF"));
         canvas.setBounceMode (graphicsButton.getToggleState());
     };
     
-    // Load and set star image for particles
     auto starImage = juce::ImageCache::getFromMemory (BinaryData::STAR_png, 
                                                       BinaryData::STAR_pngSize);
     Particle::setStarImage (starImage);
     
-    // Load and set spawner images for spawn points
     auto spawnerImage1 = juce::ImageCache::getFromMemory (BinaryData::SPAWNER1_png, 
                                                           BinaryData::SPAWNER1_pngSize);
     auto spawnerImage2 = juce::ImageCache::getFromMemory (BinaryData::SPAWNER2_png, 
                                                           BinaryData::SPAWNER2_pngSize);
     SpawnPoint::setSpawnerImages (spawnerImage1, spawnerImage2);
     
-    // Load and set hover spawner images for spawn points
     auto spawnerImage1Hover = juce::ImageCache::getFromMemory (BinaryData::SPAWNER1HOVER_png, 
                                                                BinaryData::SPAWNER1HOVER_pngSize);
     auto spawnerImage2Hover = juce::ImageCache::getFromMemory (BinaryData::SPAWNER2HOVER_png, 
                                                                BinaryData::SPAWNER2HOVER_pngSize);
     SpawnPoint::setSpawnerHoverImages (spawnerImage1Hover, spawnerImage2Hover);
     
-    // Load and set vortex images for mass points (black holes)
     auto vortexImage1 = juce::ImageCache::getFromMemory (BinaryData::VORTEX1_png, 
                                                          BinaryData::VORTEX1_pngSize);
     auto vortexImage2 = juce::ImageCache::getFromMemory (BinaryData::VORTEX2_png, 
@@ -111,7 +99,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                          BinaryData::VORTEX4_pngSize);
     MassPoint::setVortexImages (vortexImage1, vortexImage2, vortexImage3, vortexImage4);
     
-    // Load and set hover vortex images for mass points
     auto vortexImage1Hover = juce::ImageCache::getFromMemory (BinaryData::VORTEX1HOVER_png, 
                                                               BinaryData::VORTEX1HOVER_pngSize);
     auto vortexImage2Hover = juce::ImageCache::getFromMemory (BinaryData::VORTEX2HOVER_png, 
@@ -122,85 +109,65 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                               BinaryData::VORTEX4HOVER_pngSize);
     MassPoint::setVortexHoverImages (vortexImage1Hover, vortexImage2Hover, vortexImage3Hover, vortexImage4Hover);
 
-    // Create image components for setAlwaysOnTop functionality
-    // Canvas Border Component
     canvasBorderComponent = std::make_unique<ImageComponent>();
     canvasBorderComponent->setImage(canvasBorderImage);
     addAndMakeVisible(*canvasBorderComponent);
     canvasBorderComponent->setBounds(0, 70, 500, 500);
     canvasBorderComponent->setAlwaysOnTop(true);
     
-    // Slider Cases Component
     sliderCasesComponent = std::make_unique<ImageComponent>();
     sliderCasesComponent->setImage(sliderCasesImage);
     addAndMakeVisible(*sliderCasesComponent);
     sliderCasesComponent->setBounds(40, 560, 415, 185);
     sliderCasesComponent->setAlwaysOnTop(true);
     
-    // Slider Cases Cover Component
     sliderCasesCoverComponent = std::make_unique<ImageComponent>();
     sliderCasesCoverComponent->setImage(sliderCasesCoverImage);
     addAndMakeVisible(*sliderCasesCoverComponent);
     sliderCasesCoverComponent->setBounds(10, 562, 480, 182);
     sliderCasesCoverComponent->setAlwaysOnTop(true);
     
-    // Title Component
     titleComponent = std::make_unique<ImageComponent>();
     titleComponent->setImage(titleImage);
     addAndMakeVisible(*titleComponent);
     titleComponent->setBounds(0, 0, 500, 118);
     titleComponent->setAlwaysOnTop(true);
 
-    // Make sure that before the constructor has finished, you've set the
-    // editor's size to whatever you need it to be.
     setSize (500, 800);
 
     addAndMakeVisible (canvas);
     canvas.setBounds (50, 125, 400, 400);
     
-    // Give processor reference to canvas for audio rendering
     processorRef.setCanvas (&canvas);
-    
-    // Pass custom typeface to canvas for drop text display
     canvas.setCustomTypeface (customTypeface);
     
-    // Setup audio file loading callback
     canvas.onAudioFileLoaded = [this](const juce::File& file) {
         processorRef.loadAudioFile (file);
-        // Update label with filename
         audioFileLabel.setText (file.getFileName(), juce::dontSendNotification);
-        // Pass audio buffer to canvas for waveform display
         canvas.setAudioBuffer (processorRef.getAudioBuffer());
     };
     
-    // Setup audio file label (will be drawn manually in paintOverChildren)
     addAndMakeVisible (audioFileLabel);
     if (customTypeface != nullptr)
         audioFileLabel.setFont (juce::FontOptions (customTypeface).withHeight (12.0f));
     else
         audioFileLabel.setFont (juce::FontOptions (12.0f));
     audioFileLabel.setJustificationType (juce::Justification::centred);
-    audioFileLabel.setText ("", juce::dontSendNotification); // Empty - we'll draw drop-text image or filename
-    // Make label text transparent so we can draw it ourselves in paintOverChildren
+    audioFileLabel.setText ("", juce::dontSendNotification);
     audioFileLabel.setColour (juce::Label::textColourId, juce::Colours::transparentBlack);
     audioFileLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     
-    // Setup particle count label (will be drawn manually in paintOverChildren)
     addAndMakeVisible (particleCountLabel);
     particleCountLabel.setFont (juce::FontOptions (14.0f));
     particleCountLabel.setJustificationType (juce::Justification::centredLeft);
     particleCountLabel.setText ("0", juce::dontSendNotification);
-    // Make label text transparent so we can draw it ourselves in paintOverChildren
     particleCountLabel.setColour (juce::Label::textColourId, juce::Colours::transparentBlack);
     particleCountLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     
-    // Start timer to update particle count (10 Hz)
     startTimer (100);
     
-    // Setup parameter sliders
     auto& apvts = processorRef.getAPVTS();
     
-    // Attack
     addAndMakeVisible (attackSlider);
     attackSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     attackSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -216,7 +183,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Release
     addAndMakeVisible (releaseSlider);
     releaseSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     releaseSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -232,7 +198,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Decay
     addAndMakeVisible (decaySlider);
     decaySlider.setSliderStyle (juce::Slider::LinearHorizontal);
     decaySlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -248,7 +213,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Sustain Level
     addAndMakeVisible (sustainSlider);
     sustainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     sustainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -256,7 +220,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     sustainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "sustain", sustainSlider);
     
-    // Update display when parameter changes
     sustainSlider.onValueChange = [this]() {
         sustainSlider.repaint();
     };
@@ -264,11 +227,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         showingSliderValue = isDragging;
         showingADSRCurve = isDragging;
         activeSliderName = "SUSTAIN";
-        activeSliderValue = value * 100.0; // Display as percentage
+        activeSliderValue = value * 100.0;
         repaint();
     };
     
-    // Grain Size
     addAndMakeVisible (grainSizeSlider);
     grainSizeSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     grainSizeSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -284,7 +246,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Grain Frequency
     addAndMakeVisible (grainFreqSlider);
     grainFreqSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     grainFreqSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -300,7 +261,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Master Gain
     addAndMakeVisible (masterGainSlider);
     masterGainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     masterGainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -316,7 +276,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         repaint();
     };
     
-    // Check if audio file was already loaded (from restored state)
     if (processorRef.hasAudioFileLoaded())
     {
         auto loadedFile = processorRef.getLoadedAudioFile();
@@ -328,7 +287,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
 PluginEditor::~PluginEditor()
 {
-    // Reset LookAndFeel before sliders are destroyed
     attackSlider.setLookAndFeel (nullptr);
     releaseSlider.setLookAndFeel (nullptr);
     decaySlider.setLookAndFeel (nullptr);
@@ -356,7 +314,6 @@ void PluginEditor::timerCallback()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // Draw background image, scaled to fit the entire component
     if (backgroundImage.isValid())
     {
         g.drawImage (backgroundImage, getLocalBounds().toFloat(),
@@ -364,24 +321,17 @@ void PluginEditor::paint (juce::Graphics& g)
     }
     else
     {
-        // Fallback if image fails to load
         g.fillAll (juce::Colour (255, 255, 242));
     }
     
-    // Draw canvas background where the canvas is (behind the canvas)
     if (canvasBackgroundImage.isValid())
     {
-        // Draw at (25, 100) with 450x450 size
         g.drawImage (canvasBackgroundImage, juce::Rectangle<float> (25.0f, 100.0f, 450.0f, 450.0f),
                     juce::RectanglePlacement::fillDestination);
     }
     
-    // Draw slider visualizations (behind components, so they appear under canvas border)
-    
-    // Draw slider value in center of canvas when dragging
     if (showingSliderValue && customTypeface != nullptr)
     {
-        // Format value based on range
         juce::String valueText;
         if (activeSliderValue >= 100.0)
             valueText = juce::String (static_cast<int>(activeSliderValue));
@@ -390,11 +340,10 @@ void PluginEditor::paint (juce::Graphics& g)
         else
             valueText = juce::String (activeSliderValue, 2);
         
-        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.4f)); // Slightly more opaque than particle count
-        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (80.0f)); // Way bigger font
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.4f));
+        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (80.0f));
         g.setFont (font);
         
-        // Draw in center of canvas
         auto canvasBounds = canvas.getBounds();
         auto centerX = canvasBounds.getCentreX();
         auto centerY = canvasBounds.getCentreY();
@@ -404,34 +353,25 @@ void PluginEditor::paint (juce::Graphics& g)
                    juce::Justification::centred, true);
     }
     
-    // Draw ADSR curve only when Attack, Release, or Sustain sliders are being dragged
     if (showingADSRCurve)
         drawADSRCurve (g);
     
-    // Draw grain size waveform when Grain Size slider is being dragged
     if (showingGrainSizeWaveform)
         drawGrainSizeWaveform (g);
     
-    // Draw multiple waveforms when Grain Frequency slider is being dragged
     if (showingGrainFreqWaveforms)
-        drawGrainSizeWaveform (g); // Reuse the same waveform drawing, but draw it multiple times
+        drawGrainSizeWaveform (g);
     
-    // Draw gain visualization when Master Gain slider is being dragged
     if (showingGainVisualization)
         drawGainVisualization (g);
 }
 
 void PluginEditor::paintOverChildren (juce::Graphics& g)
 {
-    // NOTE: Canvas border, slider cases, slider cases cover, and title are now 
-    // drawn by their respective components with setAlwaysOnTop(true) instead of here
-    
-    // Draw drop-text image or filename at top of canvas
     auto labelBounds = audioFileLabel.getBounds();
     
     if (audioFileLabel.getText().isEmpty())
     {
-        // No file loaded - draw drop-text image at 360px wide
         if (dropTextImage.isValid())
         {
             auto imageWidth = 360.0f;
@@ -445,18 +385,15 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
     }
     else
     {
-        // File loaded - draw filename in custom font with 25% opacity and letter spacing
-        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.25f)); // #FFFFF2 at 25% opacity
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.25f));
         
         if (customTypeface != nullptr)
         {
-            // Get text, remove extension, convert to lowercase
             auto text = audioFileLabel.getText();
             if (text.contains("."))
                 text = text.upToFirstOccurrenceOf(".", false, false);
             text = text.toLowerCase();
             
-            // Calculate letter spacing to spread text across 340px
             auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (12.0f));
             juce::GlyphArrangement glyphs;
             glyphs.addLineOfText (font, text, 0.0f, 0.0f);
@@ -465,7 +402,6 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
             auto extraSpaceNeeded = targetWidth - naturalWidth;
             auto letterSpacing = (text.length() > 1) ? extraSpaceNeeded / (text.length() - 1) : 0.0f;
             
-            // Draw text with custom letter spacing, moved down 12px
             font = font.withExtraKerningFactor (letterSpacing / font.getHeight());
             g.setFont (font);
             auto adjustedBounds = labelBounds.toFloat().withY(labelBounds.getY() + 12);
@@ -480,22 +416,19 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
         }
     }
     
-    // Draw particle count in bottom right corner of canvas
-    // Canvas is at (50, 125) with size 400x400, so bottom right is at (450, 525)
     if (customTypeface != nullptr)
     {
-        auto text = particleCountLabel.getText(); // Just the number
-        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.25f)); // #FFFFF2 at 25% opacity, same as filename
-        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (16.0f)); // Bigger font (was 12.0f)
+        auto text = particleCountLabel.getText();
+        g.setColour (juce::Colour (0xFF, 0xFF, 0xF2).withAlpha (0.25f));
+        auto font = juce::Font (juce::FontOptions (customTypeface).withHeight (16.0f));
         g.setFont (font);
         
-        // Position text in bottom right corner of canvas with more padding (further up and more left)
-        auto canvasBounds = canvas.getBounds(); // Get canvas bounds
+        auto canvasBounds = canvas.getBounds();
         juce::GlyphArrangement textGlyphs;
         textGlyphs.addLineOfText (font, text, 0.0f, 0.0f);
         auto textWidth = textGlyphs.getBoundingBox (0, -1, true).getWidth();
-        auto textX = canvasBounds.getRight() - textWidth - 20.0f; // 20px padding from right (was 10px)
-        auto textY = canvasBounds.getBottom() - 40.0f; // 40px from bottom (higher than before)
+        auto textX = canvasBounds.getRight() - textWidth - 20.0f;
+        auto textY = canvasBounds.getBottom() - 40.0f;
         
         g.drawText (text, juce::Rectangle<float>(textX, textY, textWidth, 20.0f), 
                    juce::Justification::centredRight, true);
@@ -504,103 +437,93 @@ void PluginEditor::paintOverChildren (juce::Graphics& g)
 
 void PluginEditor::drawADSRCurve (juce::Graphics& g)
 {
-    // Get current ADSR parameter values
     auto attack = attackSlider.getValue();
     auto decay = decaySlider.getValue();
-    auto sustainLinear = sustainSlider.getValue(); // Linear 0.0-1.0 from parameter
+    auto sustainLinear = sustainSlider.getValue();
     auto release = releaseSlider.getValue();
     
-    // Use LINEAR sustain value for visual display (matches slider position intuitively)
-    // Audio uses logarithmic conversion, but visual should show what the slider shows
+    // Linear sustain for visual - audio uses logarithmic conversion
     float sustain = static_cast<float>(sustainLinear);
     
-    // Use bottom two-thirds of canvas for drawing area
     auto canvasBounds = canvas.getBounds();
     float curveX = canvasBounds.getX();
-    float curveY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f); // Start 1/3 down
+    float curveY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f);
     float curveWidth = canvasBounds.getWidth();
-    float curveHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
+    float curveHeight = canvasBounds.getHeight() * (2.0f / 3.0f);
     
-    // Calculate time scaling
-    float totalTime = static_cast<float>(attack + decay + 0.5f + release); // +0.5s for sustain display
+    float totalTime = static_cast<float>(attack + decay + 0.5f + release);
     float timeScale = curveWidth / totalTime;
     
-    // Build the path for ADSR curve
     juce::Path adsrPath;
     
-    // Start at bottom left (silence)
     float startX = curveX;
     float baseY = curveY + curveHeight;
     adsrPath.startNewSubPath (startX, baseY);
     
-    // Attack phase - exponential curve (x^2)
+    // Attack phase (exponential)
     int attackSteps = 20;
     for (int i = 1; i <= attackSteps; ++i)
     {
         float t = i / static_cast<float>(attackSteps);
-        float normalized = t * t; // Exponential attack
+        float normalized = t * t;
         float x = startX + (t * static_cast<float>(attack) * timeScale);
         float y = baseY - (normalized * curveHeight);
         adsrPath.lineTo (x, y);
     }
     
-    // Decay phase - inverse exponential curve down to sustain level
+    // Decay phase (inverse exponential to sustain)
     float decayStartX = startX + (static_cast<float>(attack) * timeScale);
     int decaySteps = 15;
     for (int i = 1; i <= decaySteps; ++i)
     {
         float t = i / static_cast<float>(decaySteps);
-        float invExp = 1.0f - std::pow (1.0f - t, 3.0f); // Inverse exponential
-        float level = 1.0f - (invExp * (1.0f - sustain)); // From 1.0 down to sustain
+        float invExp = 1.0f - std::pow (1.0f - t, 3.0f);
+        float level = 1.0f - (invExp * (1.0f - sustain));
         float x = decayStartX + (t * static_cast<float>(decay) * timeScale);
         float y = baseY - (level * curveHeight);
         adsrPath.lineTo (x, y);
     }
     
-    // Sustain phase - flat line at sustain level
+    // Sustain phase (flat)
     float sustainStartX = decayStartX + (static_cast<float>(decay) * timeScale);
     float sustainEndX = sustainStartX + (0.5f * timeScale);
     float sustainY = baseY - (sustain * curveHeight);
     adsrPath.lineTo (sustainEndX, sustainY);
     
-    // Release phase - inverse exponential curve down to silence
+    // Release phase (inverse exponential to silence)
     int releaseSteps = 20;
     for (int i = 1; i <= releaseSteps; ++i)
     {
         float t = i / static_cast<float>(releaseSteps);
-        float invExp = 1.0f - std::pow (1.0f - t, 4.0f); // Inverse exponential (fast at first, slower at end)
-        float level = sustain - (invExp * sustain); // From sustain down to 0
+        float invExp = 1.0f - std::pow (1.0f - t, 4.0f);
+        float level = sustain - (invExp * sustain);
         float x = sustainEndX + (t * static_cast<float>(release) * timeScale);
         float y = baseY - (level * curveHeight);
         adsrPath.lineTo (x, y);
     }
     
-    // Close the path by connecting to baseline and back to start
+    // Close path
     float endX = sustainEndX + (static_cast<float>(release) * timeScale);
-    adsrPath.lineTo (endX, baseY); // Down to baseline at end
-    adsrPath.lineTo (startX, baseY); // Back to start along baseline
+    adsrPath.lineTo (endX, baseY);
+    adsrPath.lineTo (startX, baseY);
     adsrPath.closeSubPath();
     
-    // Fill with gradient (top to bottom, very subtle)
     auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
     juce::ColourGradient gradient (colour.withAlpha(0.08f), curveX, curveY,
                                    colour.withAlpha(0.02f), curveX, baseY, false);
     g.setGradientFill (gradient);
     g.fillPath (adsrPath);
     
-    // Draw outline on top (very transparent)
     g.setColour (colour.withAlpha (0.15f));
     g.strokePath (adsrPath, juce::PathStrokeType (1.5f));
 }
 
 void PluginEditor::drawGrainSizeWaveform (juce::Graphics& g)
 {
-    // Check if audio is loaded
     const auto* audioBuffer = processorRef.getAudioBuffer();
     if (audioBuffer == nullptr || audioBuffer->getNumSamples() == 0)
         return;
     
-    // Use canvas bounds for drawing area
     auto canvasBounds = canvas.getBounds();
     float canvasWidth = canvasBounds.getWidth();
     float canvasHeight = canvasBounds.getHeight();
@@ -611,14 +534,11 @@ void PluginEditor::drawGrainSizeWaveform (juce::Graphics& g)
     
     if (showingGrainFreqWaveforms)
     {
-        // Frequency visualization with circles
         float frequency = static_cast<float>(grainFreqSlider.getValue());
         
-        // Get whole and fractional parts
         int wholeCircles = static_cast<int>(frequency);
         float fractionalPart = frequency - wholeCircles;
         
-        // Circle radius
         float circleRadius = 5.0f;
         
         // Predetermined circle positions (normalized 0-1, relative to canvas)
@@ -759,42 +679,32 @@ void PluginEditor::resized()
     // Particle count label (invisible, just holds the text) - positioned at bottom right of canvas
     particleCountLabel.setBounds (canvas.getRight() - 60, canvas.getBottom() - 25, 50, 20);
     
-    // Horizontal sliders in slider cases area (40, 560, 415x185)
-    // 2 columns, 3 rows, each slider 200x50
-    // Slider cases dimensions: x=40, y=560, width=415, height=185
     int sliderCasesX = 40;
     int sliderCasesY = 560;
     int sliderWidth = 200;
     int sliderHeight = 50;
-    int columnSpacing = 215; // Space between left edges of columns
-    int rowSpacing = 60;     // Space between rows
-    int leftColumnX = sliderCasesX + 5;  // Small margin from left edge
-    int rightColumnX = leftColumnX + columnSpacing - 10; // Move right column 10px left (was 15, now +5)
-    int startY = sliderCasesY + 10; // Small margin from top
+    int columnSpacing = 215;
+    int rowSpacing = 60;
+    int leftColumnX = sliderCasesX + 5;
+    int rightColumnX = leftColumnX + columnSpacing - 10;
+    int startY = sliderCasesY + 10;
     
-    // Row 1: Attack (left), Release (right) - moved up 10px, then down 3px = -7px
     attackSlider.setBounds (leftColumnX, startY - 7, sliderWidth, sliderHeight);
     releaseSlider.setBounds (rightColumnX, startY - 7, sliderWidth, sliderHeight);
     
-    // Row 2: Decay (left), Sustain (right) - moved up 1px
     decaySlider.setBounds (leftColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
     sustainSlider.setBounds (rightColumnX, startY + rowSpacing - 1, sliderWidth, sliderHeight);
     
-    // Row 3: Grain Frequency (left), Grain Size (right) - moved down 5px, then up 2px = +3px
     grainFreqSlider.setBounds (leftColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
     grainSizeSlider.setBounds (rightColumnX, startY + rowSpacing * 2 + 3, sliderWidth, sliderHeight);
     
-    // Row 4: Master Gain (bottom right) - positioned at (247, 749) with 234px length
     masterGainSlider.setBounds (247, 749, 234, sliderHeight);
     
-    // Image buttons below slider cases
-    // Slider cases end at y=745 (560 + 185)
-    int buttonY = 750; // 5px below slider cases
+    int buttonY = 750;
     int buttonWidth = 200;
     int buttonHeight = 40;
-    int buttonSpacing = 15; // Space between buttons
+    int buttonSpacing = 15;
     
-    // Position graphics button on the left (where it was with break CPU button)
     int totalWidth = buttonWidth * 2 + buttonSpacing;
     int startX = sliderCasesX + (415 - totalWidth) / 2;
     
@@ -803,47 +713,33 @@ void PluginEditor::resized()
 
 void PluginEditor::drawGainVisualization (juce::Graphics& g)
 {
-    // Get current gain value in dB
-    auto gainDB = static_cast<float>(masterGainSlider.getValue()); // -60dB to +6dB (with -60dB representing -infinity)
+    auto gainDB = static_cast<float>(masterGainSlider.getValue());
     
-    // Use linear scale based on dB value
-    // For visualization: -60dB (representing -∞) = 0.0, +6dB = 1.0
+    // Map -60dB (representing -∞) to 0.0, +6dB to 1.0
     float linearScale;
     if (gainDB <= -60.0f)
-    {
-        linearScale = 0.0f; // -infinity shows as empty (no rectangle)
-    }
+        linearScale = 0.0f;
     else
-    {
-        linearScale = (gainDB + 60.0f) / 66.0f; // Maps -60dB to 0.0, +6dB to 1.0 (66dB range)
-    }
+        linearScale = (gainDB + 60.0f) / 66.0f;
     
-    // Use bottom two-thirds of canvas for drawing area (match ADSR curve exactly)
     auto canvasBounds = canvas.getBounds();
     float drawX = canvasBounds.getX();
-    float drawY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f); // Start 1/3 down
+    float drawY = canvasBounds.getY() + (canvasBounds.getHeight() / 3.0f);
     float drawWidth = canvasBounds.getWidth();
-    float drawHeight = canvasBounds.getHeight() * (2.0f / 3.0f); // Use bottom 2/3
+    float drawHeight = canvasBounds.getHeight() * (2.0f / 3.0f);
     
-    // Only draw rectangle if we have a meaningful gain level (not -infinity)
     if (linearScale > 0.0f)
     {
-        // Calculate rectangle height based on linear scale
         float rectHeight = drawHeight * linearScale;
-        float rectY = drawY + drawHeight - rectHeight; // Start from bottom
+        float rectY = drawY + drawHeight - rectHeight;
         
-        // Draw filled rectangle with gradient (match ADSR curve style)
         auto colour = juce::Colour (0xFF, 0xFF, 0xF2);
         juce::ColourGradient gradient (colour.withAlpha(0.08f), drawX, rectY,
                                        colour.withAlpha(0.02f), drawX, rectY + rectHeight, false);
         g.setGradientFill (gradient);
         g.fillRect (drawX, rectY, drawWidth, rectHeight);
         
-        // Draw outline of the filled area (match ADSR curve style)
         g.setColour (colour.withAlpha (0.15f));
         g.drawRect (drawX, rectY, drawWidth, rectHeight, 1.5f);
     }
-    
-    // Note: Gain value text is displayed by the general slider value system,
-    // so we don't draw it again here to avoid duplication
 }
