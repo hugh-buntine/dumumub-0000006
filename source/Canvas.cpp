@@ -30,7 +30,7 @@ Canvas::~Canvas()
     stopTimer();
     
     auto* processorParticles = audioProcessor.getParticles();
-    int particleCount = processorParticles ? processorParticles->size() : 0;
+    [[maybe_unused]] int particleCount = processorParticles ? processorParticles->size() : 0;
     
     LOG_INFO("Canvas destroyed - had " + juce::String(spawnPoints.size()) + 
              " spawn points, " + juce::String(massPoints.size()) + " mass points, and " +
@@ -457,15 +457,12 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
     
     // Check if clicking on a spawn point or mass point
     bool clickedOnComponent = false;
-    int clickedSpawnIndex = -1;
-    int clickedMassIndex = -1;
     
     for (int i = 0; i < spawnPoints.size(); ++i)
     {
         if (spawnPoints[i]->getBounds().contains (mousePos.toInt()))
         {
             clickedOnComponent = true;
-            clickedSpawnIndex = i;
             LOG_INFO("Canvas::mouseDown - Clicked on spawn point #" + juce::String(i) + 
                      " at bounds: " + spawnPoints[i]->getBounds().toString());
             break;
@@ -479,7 +476,6 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
             if (massPoints[i]->getBounds().contains (mousePos.toInt()))
             {
                 clickedOnComponent = true;
-                clickedMassIndex = i;
                 LOG_INFO("Canvas::mouseDown - Clicked on mass point #" + juce::String(i) + 
                          " at bounds: " + massPoints[i]->getBounds().toString());
                 break;
@@ -496,12 +492,6 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
             spawn->setSelected (false);
         }
         repaint(); // Force repaint to hide arrows immediately
-    }
-    else
-    {
-        LOG_INFO("Canvas::mouseDown - Clicked on component (spawn: " + 
-                 juce::String(clickedSpawnIndex) + ", mass: " + 
-                 juce::String(clickedMassIndex) + ")");
     }
     
     // If not clicking on arrow, allow spawn points to handle their own dragging

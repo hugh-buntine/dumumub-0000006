@@ -162,7 +162,7 @@ private:
     static constexpr int maxTrailPoints = 60; // ~1 second at 60 FPS
     static constexpr float trailFadeTime = 1.0f; // Trail fades over 1 second
     
-    // Canvas bounds for position mapping
+    // Canvas bounds for position mapping (order matters for constructor initializer list)
     juce::Rectangle<float> canvasBounds;
     
     // Bounce mode (affects edge panning behavior)
@@ -177,12 +177,12 @@ private:
     // Note: Grain attack/release are now HARDCODED to 50% crossfade (not parameters)
     // Particle-level attack/release control overall ADSR envelope instead
     
-    // Grain triggering based on frequency
+    // Grain triggering based on frequency (order matters for constructor initializer list)
+    double currentSampleRate = 44100.0;
     int samplesSinceLastGrainTrigger = 0;
     bool isFirstGrain = true; // First grain triggers immediately
     
     // Cached sample rate calculations
-    double currentSampleRate = 44100.0;
     int cachedTotalGrainSamples = 2205; // 50ms at 44.1kHz
     int cachedAttackSamples = 220; // 5ms at 44.1kHz
     int cachedReleaseSamples = 220; // 5ms at 44.1kHz

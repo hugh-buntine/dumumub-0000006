@@ -14,7 +14,7 @@ void Particle::initializeHannTable()
     hannWindowTable.resize (HANN_TABLE_SIZE);
     
     const float pi = juce::MathConstants<float>::pi;
-    for (int i = 0; i < HANN_TABLE_SIZE; ++i)
+    for (size_t i = 0; i < HANN_TABLE_SIZE; ++i)
     {
         float normalizedPos = static_cast<float>(i) / static_cast<float>(HANN_TABLE_SIZE - 1);
         hannWindowTable[i] = 0.5f * (1.0f - std::cos (2.0f * pi * normalizedPos));
@@ -32,8 +32,8 @@ float Particle::getHannWindowValue (float normalizedPosition)
     
     // Convert to table index (floating point for interpolation)
     float tablePos = normalizedPosition * static_cast<float>(HANN_TABLE_SIZE - 1);
-    int index0 = static_cast<int>(tablePos);
-    int index1 = juce::jmin (index0 + 1, HANN_TABLE_SIZE - 1);
+    size_t index0 = static_cast<size_t>(tablePos);
+    size_t index1 = juce::jmin (index0 + 1, static_cast<size_t>(HANN_TABLE_SIZE - 1));
     
     // Linear interpolation between table entries
     float frac = tablePos - static_cast<float>(index0);
@@ -48,25 +48,27 @@ float Particle::getHannWindowValue (float normalizedPosition)
 }
 
 //==============================================================================
-Particle::Particle (juce::Point<float> position, juce::Point<float> velocity, 
-                    const juce::Rectangle<float>& canvasBounds, int midiNoteNumber,
-                    float attackTime, float sustainLevel, float sustainLevelLinear, float releaseTime,
-                    float initialVelocity, float pitchShift)
-    : position (position), velocity (velocity), canvasBounds (canvasBounds),
+Particle::Particle (juce::Point<float> initialPosition, juce::Point<float> initialVelocity, 
+                    const juce::Rectangle<float>& bounds, int noteNumber,
+                    float attack, float sustain, float sustainLinear, float release,
+                    float velocityMultiplier, float pitch)
+    : position (initialPosition), velocity (initialVelocity), 
       lifeTime (0.0f), 
-      midiNoteNumber (midiNoteNumber),
+      midiNoteNumber (noteNumber),
       adsrPhase (ADSRPhase::Attack),
       adsrTime (0.0f),
-      attackTime (attackTime),
-      sustainLevel (sustainLevel),              // Logarithmic value for audio
-      sustainLevelLinear (sustainLevelLinear),  // Linear slider value for visuals
-      releaseTime (releaseTime),
+      attackTime (attack),
+      sustainLevel (sustain),              // Logarithmic value for audio
+      sustainLevelLinear (sustainLinear),  // Linear slider value for visuals
+      releaseTime (release),
       adsrAmplitude (0.0f),                     // Logarithmic for audio
       adsrAmplitudeLinear (0.0f),               // Linear for visuals
-      initialVelocityMultiplier (initialVelocity), pitchShift (pitchShift),
-      currentSampleRate (0.0), samplesSinceLastGrainTrigger (0),
+      initialVelocityMultiplier (velocityMultiplier), pitchShift (pitch),
+      canvasBounds (bounds),
+      currentSampleRate (0.0), 
+      samplesSinceLastGrainTrigger (0),
       cachedTotalGrainSamples (2205),
-      lastPosition (position)
+      lastPosition (initialPosition)
 {
     // Reserve space for grains to avoid allocations during audio processing
     // With 100Hz grain frequency, we might have ~20 overlapping grains at most
@@ -171,7 +173,6 @@ void Particle::updateGrains (int numSamples)
     
     // Track grain removals for click diagnosis
     static int totalGrainsRemoved = 0;
-    int grainsBeforeUpdate = activeGrains.size();
     
     // BUG #14 FIX: Update each grain by its ACTUAL samples rendered, not buffer size
     // This prevents the 482-sample overshoot that causes grains to be removed mid-fade
@@ -578,7 +579,7 @@ void Particle::draw (juce::Graphics& g)
 
 void Particle::updateSampleRate (double sampleRate)
 {
-    if (sampleRate != currentSampleRate && sampleRate > 0)
+    if (std::abs(sampleRate - currentSampleRate) > 0.001 && sampleRate > 0)
     {
         currentSampleRate = sampleRate;
         
@@ -596,13 +597,13 @@ void Particle::updateSampleRate (double sampleRate)
     }
 }
 
-void Particle::setGrainParameters (float grainSizeMsNew, float attackPercentNew, float releasePercentNew)
+void Particle::setGrainParameters (float grainSizeMsNew, float /*attackPercentNew*/, float /*releasePercentNew*/)
 {
     // Note: attack/release parameters are now ignored - grain crossfade is hardcoded to 50%
     // These parameters are kept for API compatibility but only grain size is used
     
     // Only update if grain size changed
-    if (grainSizeMs != grainSizeMsNew)
+    if (std::abs(grainSizeMs - grainSizeMsNew) > 0.001f)
     {
         grainSizeMs = grainSizeMsNew;
         

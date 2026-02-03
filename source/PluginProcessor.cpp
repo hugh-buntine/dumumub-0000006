@@ -314,8 +314,8 @@ void PluginProcessor::updateMassPoint (int index, juce::Point<float> position, f
 {
     if (index >= 0 && index < static_cast<int>(massPoints.size()))
     {
-        massPoints[index].position = position;
-        massPoints[index].massMultiplier = massMultiplier;
+        massPoints[static_cast<size_t>(index)].position = position;
+        massPoints[static_cast<size_t>(index)].massMultiplier = massMultiplier;
         LOG_INFO("Updated mass point " + juce::String(index) + " to (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ")");
         savePointsToTree(); // Sync to ValueTree
         updateHostDisplay(); // Notify DAW that state has changed
@@ -347,8 +347,8 @@ void PluginProcessor::updateSpawnPoint (int index, juce::Point<float> position, 
 {
     if (index >= 0 && index < static_cast<int>(spawnPoints.size()))
     {
-        spawnPoints[index].position = position;
-        spawnPoints[index].momentumAngle = angle;
+        spawnPoints[static_cast<size_t>(index)].position = position;
+        spawnPoints[static_cast<size_t>(index)].momentumAngle = angle;
         LOG_INFO("Updated spawn point " + juce::String(index) + " to (" + juce::String(position.x, 1) + ", " + juce::String(position.y, 1) + ") angle: " + juce::String(angle, 2));
         savePointsToTree(); // Sync to ValueTree
         updateHostDisplay(); // Notify DAW that state has changed
@@ -466,8 +466,8 @@ void PluginProcessor::handleNoteOn (int noteNumber, float velocity, float pitchS
     }
     
     // Use round-robin spawn point selection
-    static int nextSpawnIndex = 0;
-    int spawnIndex = nextSpawnIndex % spawnPoints.size();
+    static size_t nextSpawnIndex = 0;
+    size_t spawnIndex = nextSpawnIndex % spawnPoints.size();
     nextSpawnIndex = (nextSpawnIndex + 1) % spawnPoints.size();
     
     auto& spawn = spawnPoints[spawnIndex];
@@ -748,7 +748,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     timeConstant = juce::jmin(0.050f, timeConstant);  // Cap at 50ms
     
     // Exponential smoothing (one-pole lowpass filter)
-    float smoothingCoefficient = 1.0f - std::exp(-2.2f / (timeConstant * getSampleRate()));
+    float smoothingCoefficient = 1.0f - static_cast<float>(std::exp(-2.2 / (static_cast<double>(timeConstant) * getSampleRate())));
     smoothedGainCompensation += smoothingCoefficient * (targetGainCompensation - smoothedGainCompensation);
     
     float gainCompensation = smoothedGainCompensation;
@@ -788,11 +788,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // CRITICAL: Pre-calculate ADSR amplitudes for entire buffer (once per sample)
         // This prevents ADSR from advancing multiple times per sample (once per grain)
         // Uses smoothed amplitude to eliminate stepping artifacts during transitions
-        std::vector<float> adsrAmplitudes(buffer.getNumSamples());
+        std::vector<float> adsrAmplitudes(static_cast<size_t>(buffer.getNumSamples()));
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             particle->updateADSRSample (getSampleRate());
-            adsrAmplitudes[i] = particle->getADSRAmplitudeSmoothed(); // Use smoothed value
+            adsrAmplitudes[static_cast<size_t>(i)] = particle->getADSRAmplitudeSmoothed(); // Use smoothed value
         }
         
         // Process each active grain
@@ -841,7 +841,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             int bufferLength = audioFileBuffer.getNumSamples();
             
             // CPU Optimization: Get direct read pointers for faster access (no virtual function calls)
-            const float** sourceChannelPointers = new const float*[audioFileBuffer.getNumChannels()];
+            const float** sourceChannelPointers = new const float*[static_cast<size_t>(audioFileBuffer.getNumChannels())];
             for (int ch = 0; ch < audioFileBuffer.getNumChannels(); ++ch)
                 sourceChannelPointers[ch] = audioFileBuffer.getReadPointer (ch);
             
@@ -929,7 +929,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 
                 // CRITICAL: Use pre-calculated ADSR amplitude for this buffer sample
                 // ADSR is calculated once per sample for entire particle (prevents multiple updates per sample)
-                float adsrAmplitude = adsrAmplitudes[i];
+                float adsrAmplitude = adsrAmplitudes[static_cast<size_t>(i)];
                 
                 // Combine grain envelope with constant amplitude factors and per-sample ADSR
                 float totalAmplitude = grainAmplitude * constantAmplitude * adsrAmplitude;
@@ -1135,7 +1135,7 @@ void PluginProcessor::loadAudioFile (const juce::File& file)
 
 //==============================================================================
 // AudioProcessorValueTreeState::Listener implementation
-void PluginProcessor::parameterChanged (const juce::String& parameterID, float newValue)
+void PluginProcessor::parameterChanged (const juce::String& /*parameterID*/, float /*newValue*/)
 {
     // No parameters currently need handling
 }
