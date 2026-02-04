@@ -21,7 +21,7 @@ Orbit is a granular synthesizer plugin designed for digital audio workstations (
 
 **Duration:** August 2025 - February 2026  
 **Role:** Solo Developer  
-**Technologies:** C++17, JUCE Framework, Granular Synthesis, Physics Simulation, MIDI
+**Technologies:** C++17, JUCE Framework
 
 ## Key Features
 
@@ -37,26 +37,26 @@ Orbit is a granular synthesizer plugin designed for digital audio workstations (
 
 ![Orbit Physics](DEMO-MEDIA/ORBIT.gif)
 
-*Grains orbiting around mass points with real-time physics simulation*
+*Particles orbiting around mass points with real-time physics simulation*
 
 ### MIDI-Triggered Grain Emission
-- **Velocity-based Speed** - MIDI velocity controls initial grain orbital velocity
+- **Velocity-based Volume** - MIDI velocity determines grain volume
 - **Pitch Mapping** - MIDI note number determines grain pitch shift
-- **Polyphonic Spawning** - Multiple grains can be active simultaneously (configurable limit)
-- **Momentum Arrows** - Draggable arrows on spawn points set initial grain trajectory
+- **Polyphonic Spawning** - Multiple particles can be active simultaneously
+- **Momentum Arrows** - Draggable arrows on spawn points set initial particle trajectory
 
 ![MIDI Spawning](DEMO-MEDIA/MIDI.gif)
 
-*MIDI-triggered grain spawning with velocity-based orbital speed*
+*MIDI-triggered particle spawning with velocity-based orbital speed*
 
 ![Momentum Arrows](DEMO-MEDIA/ARROWS.gif)
 
-*Adjustable momentum arrows controlling initial grain direction*
+*Adjustable momentum arrows controlling initial particle direction*
 
 ### Granular Synthesis Engine
 - **Grain Size Control** - Adjustable grain duration (10-500ms)
 - **Grain Frequency** - Control grain triggering rate for density
-- **ADSR Envelope** - Full Attack, Decay, Sustain, Release control per grain
+- **ADSR Envelope** - Full Attack, Decay, Sustain, Release control per particle
 - **Multi-format Support** - Load WAV, MP3, AIFF, FLAC audio files via drag-and-drop
 
 ![ADSR Control](DEMO-MEDIA/ADSR.gif)
@@ -84,7 +84,7 @@ Orbit is a granular synthesizer plugin designed for digital audio workstations (
 ### Professional UI/UX
 - **Custom Graphics** - Hand-designed interface with hover states for all controls
 - **Visual Parameter Feedback** - ADSR curve visualization, grain size waveform preview
-- **Gain Visualization** - Scaling knob with -infinity dB support
+- **Gain Visualization** - Scaling knob with visual feedback
 - **Responsive Controls** - Custom slider look-and-feel with rotation animation
 
 ![Parameter Feedback](DEMO-MEDIA/SLIDERS.gif)
