@@ -541,22 +541,8 @@ void Canvas::spawnParticleFromMidi (int midiNote, float midiVelocity)
 
 void Canvas::timerCallback()
 {
-    auto* processorParticles = audioProcessor.getParticles();
-    const bool hasParticles = !processorParticles->isEmpty();
-    
-    // Slow timer to 5 FPS when idle to save CPU
-    if (!hasParticles)
-    {
-        if (getTimerInterval() != 200)
-            startTimer(200);
-        return;
-    }
-    
-    // Full 60 FPS when active
-    if (getTimerInterval() != 16)
-        startTimer(16);
-    
     const float deltaTime = 1.0f / 60.0f;
+    
     
     for (auto* spawn : spawnPoints)
     {
