@@ -1,5 +1,6 @@
 # Orbit - Granular Synthesizer Plugin
 
+[![build](https://github.com/hugh-buntine/dumumub-0000006/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/hugh-buntine/dumumub-0000006/actions/workflows/build_and_test.yml)
 ![Plugin Interface](https://img.shields.io/badge/JUCE-Audio%20Plugin-blue)
 ![Language](https://img.shields.io/badge/C++-17-red)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-green)
@@ -90,3 +91,4 @@ Orbit is a granular synthesizer plugin designed for digital audio workstations (
 ![Parameter Feedback](DEMO-MEDIA/SLIDERS.gif)
 
 *Interactive sliders with visual parameter feedback*
+
