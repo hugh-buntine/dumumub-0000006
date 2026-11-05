@@ -44,6 +44,7 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
     
     std::function<void(const juce::File&)> onAudioFileLoaded;
+    void openSampleChooser();
     
     void setAudioBuffer (const juce::AudioBuffer<float>* buffer);
     void setParticleLifespan (float lifespanSeconds) { particleLifespan = lifespanSeconds; }
@@ -81,6 +82,7 @@ private:
     void syncGuiFromProcessor();
     
     CustomPopupMenuLookAndFeel popupMenuLookAndFeel;
+    std::unique_ptr<juce::FileChooser> sampleChooser;
     juce::Typeface::Ptr customTypeface;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Canvas)

@@ -263,6 +263,8 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
         
         menu.addItem (1, "mass", canAddMass);
         menu.addItem (2, "emitter", canAddSpawn);
+        menu.addSeparator();
+        menu.addItem (3, "load sample");
         
         auto options = juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (event.getScreenPosition().x, 
@@ -272,7 +274,11 @@ void Canvas::mouseDown (const juce::MouseEvent& event)
         menu.showMenuAsync (options,
                            [this, mousePos] (int result)
                            {
-                               if (result == 1 && massPoints.size() < maxMassPoints)
+                               if (result == 3)
+                               {
+                                   openSampleChooser();
+                               }
+                               else if (result == 1 && massPoints.size() < maxMassPoints)
                                {
                                    audioProcessor.addMassPoint (mousePos, 2.0f);
                                    
@@ -674,6 +680,24 @@ void Canvas::setAudioBuffer (const juce::AudioBuffer<float>* buffer)
 }
 
 //==============================================================================
+// File-browser alternative to drag and drop, which doesn't reach the plugin
+// window in some Linux hosts.
+void Canvas::openSampleChooser()
+{
+    sampleChooser = std::make_unique<juce::FileChooser> ("load sample",
+                                                         juce::File(),
+                                                         "*.wav;*.mp3;*.aiff;*.aif;*.flac;*.ogg;*.m4a");
+
+    sampleChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                    | juce::FileBrowserComponent::canSelectFiles,
+                                [this] (const juce::FileChooser& chooser)
+                                {
+                                    auto file = chooser.getResult();
+                                    if (file.existsAsFile())
+                                        filesDropped (juce::StringArray (file.getFullPathName()), 0, 0);
+                                });
+}
+
 bool Canvas::isInterestedInFileDrag (const juce::StringArray& files)
 {
     for (const auto& filePath : files)
